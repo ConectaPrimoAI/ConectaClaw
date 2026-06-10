@@ -1,7 +1,7 @@
 {
   "name": "joelbot-openclaw",
   "version": "20.0.0",
-  "description": "JoelBot V20.0 - Agente Autônomo Telegram",
+  "description": "ConectaClaw V20.0 - Agente Autônomo Telegram",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -16,12 +16,12 @@
     "dotenv": "^16.6.1",
     "express": "^4.22.2",
     "form-data": "^4.0.1",
-    "google-tts-api": "^2.0.2",
     "node-cron": "^3.0.3",
     "groq-sdk": "^0.37.0",
     "node-fetch": "^3.3.2",
     "pptxgenjs": "^4.0.1",
     "puppeteer": "^24.43.1",
+    "replicate": "^0.34.0",
     "telegraf": "^4.16.3",
     "zod": "^4.4.3"
   },
