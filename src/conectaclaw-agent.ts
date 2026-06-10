@@ -86,12 +86,11 @@ async function createStatusUpdater(ctx: Context, initialText: string) {
 bot.start((ctx) => {
     ctx.reply(
         '👋 Bem-vindo ao ConectaClaw!\n\n' +
-        '🤖 Posso te ajudar com:\n' +
+        '🦞 Posso te ajudar com:\n' +
         '   • Texto (conversa normal)\n' +
         '   • 🎤 Áudio (manda que eu transcrevo e respondo)\n' +
         '   • 🎨 /imagem <descrição> - Gera imagem\n' +
         '   • 🎬 /video <descrição> - Gera vídeo\n' +
-        '   • 🧠 /model - Mostra o modelo em uso\n' +
         '   • 🗑️ /clear - Limpa histórico'
     );
 });
