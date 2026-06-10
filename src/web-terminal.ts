@@ -2,18 +2,24 @@ import express, { Express, Request, Response } from 'express';
 
 const app: Express = express();
 
-// CORREÇÃO: Garante que o terminal use uma porta diferente do gateway principal para evitar EADDRINUSE
-const PORT = parseInt(process.env.WEB_TERMINAL_PORT || '3000');
+// CORREÇÃO: prioriza PORT (que o Render injeta) e cai pro WEB_TERMINAL_PORT como fallback.
+// Se nenhum estiver setado, usa 10000 (padrão do Render).
+const PORT = parseInt(
+  process.env.PORT ?? process.env.WEB_TERMINAL_PORT ?? '10000',
+  10
+);
+
+// CRÍTICO pro Render: bindar em 0.0.0.0, não localhost.
+const HOST = '0.0.0.0';
 
 let botLogs: string[] = [];
 const MAX_LOGS = 500;
 
 export function addLog(message: string) {
   const timestamp = new Date().toISOString();
-  // Limpa caracteres especiais de formatação Markdown antes de salvar no log visual do terminal
   const cleanMessage = message.replace(/[*_`\[\]()~>#+=|{}.!]/g, '');
   const logEntry = `[${timestamp}] ${cleanMessage}`;
-  
+
   botLogs.push(logEntry);
   if (botLogs.length > MAX_LOGS) botLogs.shift();
   console.log(logEntry);
@@ -111,15 +117,20 @@ app.get('/api/logs', (req: Request, res: Response) => { res.json({ logs: botLogs
 app.post('/api/logs/clear', (req: Request, res: Response) => { botLogs = []; res.json({ success: true }); });
 
 export function startWebTerminal() {
-  // Tratamento de erro caso a porta já esteja em uso por outro processo local
-  app.listen(PORT, () => { 
-    console.log(`🌐 Web Terminal rodando com sucesso em: http://localhost:${PORT}`); 
-  }).on('error', (err: any) => {
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`🌐 Web Terminal rodando em http://${HOST}:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
-      console.error(`⚠️ Porta ${PORT} em uso. Tentando rodar Web Terminal na porta alternativa ${PORT + 1}...`);
-      app.listen(PORT + 1);
+      console.error(`⚠️ Porta ${PORT} em uso. Tentando ${PORT + 1}...`);
+      app.listen(PORT + 1, HOST, () => {
+        console.log(`🌐 Web Terminal rodando em http://${HOST}:${PORT + 1}`);
+      });
     } else {
       console.error(`❌ Erro crítico ao iniciar Web Terminal: ${err.message}`);
     }
   });
+
+  return server;
 }
