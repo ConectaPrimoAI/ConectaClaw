@@ -2,7 +2,7 @@ import { Telegraf, Context } from 'telegraf';
 import Groq from 'groq-sdk';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { startWebTerminal } from './web-terminal.js';  // ← ✅ FIX 1: import adicionado
+import { startWebTerminal } from './web-terminal.js';
 
 // ── Validação de variáveis obrigatórias ────────────────────
 if (!process.env.TELEGRAM_TOKEN || !process.env.GROQ_API_KEY) {
@@ -44,6 +44,12 @@ function clearOldMemories() {
 // Limpar memórias antigas a cada 5 minutos
 setInterval(clearOldMemories, 5 * 60 * 1000);
 
+// ── Sanitizador de Markdown para o Telegram ─────────────────
+// Converte Markdown comum (que a IA gera) pra MarkdownV2 válido do Telegram
+function escapeMarkdownV2(text: string): string {
+    return text.replace(/[_*[\]()~`>#+=|{}.!\\-]/g, '\\$&');
+}
+
 // ── Handlers do Bot ──────────────────────────────────────────
 
 bot.start((ctx) => {
@@ -61,6 +67,11 @@ bot.command('clear', (ctx) => {
         conversationMemory.delete(userId);
         ctx.reply('✅ Histórico de conversa limpo!');
     }
+});
+
+bot.command('model', (ctx) => {
+    ctx.reply('🧠 Modelo atual: `llama-3.3-70b-versatile`\n\n' +
+        'Modelos disponíveis: llama-3.3-70b-versatile, llama-3.1-8b-instant');
 });
 
 bot.on('text', async (ctx) => {
@@ -87,7 +98,7 @@ bot.on('text', async (ctx) => {
 
         // Chamar API Groq com histórico
         const response = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',  // ← ✅ FIX 2: mixtral descontinuado → llama-3.3
+            model: 'llama-3.3-70b-versatile',
             messages: memory.messages,
             max_tokens: 1024,
             temperature: 0.7
@@ -104,16 +115,41 @@ bot.on('text', async (ctx) => {
         // Atualizar timestamp
         memory.timestamp = Date.now();
 
-        // Enviar resposta ao usuário
-        await ctx.reply(assistantMessage, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error('Erro ao processar mensagem:', error);
-        ctx.reply('❌ Desculpe, ocorreu um erro ao processar sua mensagem.');
+        // ✅ FIX 1: Tenta enviar como Markdown; se der erro de parse, cai pro texto puro
+        try {
+            await ctx.reply(assistantMessage, { parse_mode: 'Markdown' });
+        } catch (mdError) {
+            console.warn('⚠️ Markdown falhou, enviando como texto puro');
+            await ctx.reply(assistantMessage);
+        }
+    } catch (error: any) {
+        // ✅ FIX 2: Log detalhado pra debug
+        console.error('❌ Erro ao processar mensagem:');
+        console.error('  userId:', userId);
+        console.error('  message:', userMessage.slice(0, 100));
+        console.error('  status:', error?.status ?? error?.response?.status);
+        console.error('  code:', error?.code);
+        console.error('  groqError:', error?.error?.error?.message);
+        console.error('  full:', JSON.stringify(error?.error ?? error, null, 2));
+
+        // ✅ FIX 3: Resposta específica baseada no tipo de erro
+        const status = error?.status ?? error?.response?.status;
+        if (status === 429) {
+            ctx.reply('⏱️ Tô recebendo muitas mensagens agora. Espera uns segundos e tenta de novo!');
+        } else if (status === 503) {
+            ctx.reply('🔧 O modelo de IA tá sobrecarregado. Tenta de novo em alguns segundos.');
+        } else if (status === 400) {
+            ctx.reply('⚠️ Sua mensagem deu problema no processamento. Tenta reformular de outro jeito!');
+            // Limpa memória do user pra evitar loop
+            conversationMemory.delete(userId);
+        } else {
+            ctx.reply('❌ Desculpe, ocorreu um erro ao processar sua mensagem.');
+        }
     }
 });
 
 // ── Inicialização do Bot ─────────────────────────────────────
-startWebTerminal();   // ← ✅ FIX 3: sobe o web terminal ANTES do bot.launch()
+startWebTerminal();
 bot.launch();
 
 console.log('🚀 ConectaClaw iniciado com sucesso!');
