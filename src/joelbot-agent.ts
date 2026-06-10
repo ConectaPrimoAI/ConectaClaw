@@ -1,122 +1,129 @@
-import { Telegraf, Context } from 'telegraf';
+// src/joelbot-agent.ts
+// JoelBot agent principal para o ConectaClaw
+// Versão corrigida: bind de porta em 0.0.0.0 + modelo Groq atualizado (mixtral foi descontinuado)
+
+import { Telegraf } from 'telegraf';
 import Groq from 'groq-sdk';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { startWebTerminal, addLog } from './web-terminal.js';
 
-// ── Validação de variáveis obrigatórias ────────────────────
-if (!process.env.TELEGRAM_TOKEN || !process.env.GROQ_API_KEY) {
-    console.error('❌ TELEGRAM_TOKEN ou GROQ_API_KEY não configurados.');
-    process.exit(1);
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+// CORREÇÃO CRÍTICA: mixtral-8x7b-32768 foi descontinuado pela Groq.
+// Modelos válidos em jun/2026:
+//   - llama-3.3-70b-versatile  (recomendado, inteligente)
+//   - llama-3.1-8b-instant     (rápido, barato)
+//   - openai/gpt-oss-120b      (alternativa)
+const GROQ_MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
+
+if (!TELEGRAM_TOKEN) {
+  console.error('❌ TELEGRAM_TOKEN não definido. Configure no Render → Environment.');
+  process.exit(1);
 }
 
-export const bot: Telegraf<Context> = new Telegraf(process.env.TELEGRAM_TOKEN);
-export const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-// ── Memória de Conversa (Armazenamento em Memória) ──────────
-interface ConversationMemory {
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-    timestamp: number;
+if (!GROQ_API_KEY) {
+  console.error('❌ GROQ_API_KEY não definida. Configure no Render → Environment.');
+  process.exit(1);
 }
 
-const conversationMemory = new Map<number, ConversationMemory>();
-const MEMORY_TIMEOUT = 30 * 60 * 1000; // 30 minutos de inatividade
+const bot = new Telegraf(TELEGRAM_TOKEN);
+const groq = new Groq({ apiKey: GROQ_API_KEY });
 
-function getConversationMemory(userId: number): ConversationMemory {
-    if (!conversationMemory.has(userId)) {
-        conversationMemory.set(userId, {
-            messages: [],
-            timestamp: Date.now()
-        });
-    }
-    return conversationMemory.get(userId)!;
+// Memória simples por usuário (em produção use Redis/Postgres)
+const userMemory = new Map<number, Array<{ role: 'user' | 'assistant'; content: string }>>();
+const MAX_HISTORY = 10;
+
+function getHistory(userId: number) {
+  if (!userMemory.has(userId)) userMemory.set(userId, []);
+  return userMemory.get(userId)!;
 }
 
-function clearOldMemories() {
-    const now = Date.now();
-    for (const [userId, memory] of conversationMemory.entries()) {
-        if (now - memory.timestamp > MEMORY_TIMEOUT) {
-            conversationMemory.delete(userId);
-        }
-    }
+async function callGroq(userId: number, userMessage: string): Promise<string> {
+  const history = getHistory(userId);
+  history.push({ role: 'user', content: userMessage });
+
+  // Mantém só as últimas MAX_HISTORY mensagens
+  if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY);
+
+  const completion = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'Você é o ConectaClaw, um assistente de IA útil, direto e amigável. ' +
+          'Responda em português do Brasil a menos que o usuário peça outro idioma. ' +
+          'Seja conciso e prático.',
+      },
+      ...history,
+    ],
+    temperature: 0.7,
+    max_tokens: 1024,
+  });
+
+  const reply = completion.choices[0]?.message?.content ?? 'Desculpe, não consegui gerar uma resposta.';
+  history.push({ role: 'assistant', content: reply });
+  return reply;
 }
 
-// Limpar memórias antigas a cada 5 minutos
-setInterval(clearOldMemories, 5 * 60 * 1000);
-
-// ── Handlers do Bot ──────────────────────────────────────────
-
-bot.start((ctx) => {
-    ctx.reply(
-        '👋 Bem-vindo ao ConectaClaw!\n\n' +
-        'Sou um assistente de IA pronto para ajudar. ' +
-        'Envie mensagens de texto e manterei o contexto da nossa conversa.\n\n' +
-        'Use /clear para limpar o histórico de conversa.'
-    );
-});
-
-bot.command('clear', (ctx) => {
-    const userId = ctx.from?.id;
-    if (userId) {
-        conversationMemory.delete(userId);
-        ctx.reply('✅ Histórico de conversa limpo!');
-    }
-});
-
+// Handler principal: responde mensagens de texto
 bot.on('text', async (ctx) => {
-    const userId = ctx.from?.id;
-    if (!userId) return;
+  const userId = ctx.from?.id;
+  const userMessage = (ctx.message as any).text ?? '';
 
-    const userMessage = ctx.message.text;
-    const memory = getConversationMemory(userId);
+  if (!userId || !userMessage) return;
 
-    try {
-        // Mostrar indicador de digitação
-        await ctx.sendChatAction('typing');
+  addLog(`📩 ${ctx.from?.username ?? userId}: ${userMessage}`);
 
-        // Adicionar mensagem do usuário ao histórico
-        memory.messages.push({
-            role: 'user',
-            content: userMessage
-        });
+  try {
+    // Mostra "digitando..." enquanto processa
+    await ctx.sendChatAction('typing');
 
-        // Manter apenas as últimas 10 mensagens (5 pares)
-        if (memory.messages.length > 10) {
-            memory.messages = memory.messages.slice(-10);
-        }
-
-        // Chamar API Groq com histórico
-        const response = await groq.chat.completions.create({
-            model: 'mixtral-8x7b-32768',
-            messages: memory.messages,
-            max_tokens: 1024,
-            temperature: 0.7
-        });
-
-        const assistantMessage = response.choices[0]?.message?.content || 'Desculpe, não consegui gerar uma resposta.';
-
-        // Adicionar resposta ao histórico
-        memory.messages.push({
-            role: 'assistant',
-            content: assistantMessage
-        });
-
-        // Atualizar timestamp
-        memory.timestamp = Date.now();
-
-        // Enviar resposta ao usuário
-        await ctx.reply(assistantMessage, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error('Erro ao processar mensagem:', error);
-        ctx.reply('❌ Desculpe, ocorreu um erro ao processar sua mensagem.');
-    }
+    const reply = await callGroq(userId, userMessage);
+    await ctx.reply(reply);
+    addLog(`✅ Resposta enviada para ${ctx.from?.username ?? userId}`);
+  } catch (err: any) {
+    addLog(`❌ Erro ao processar mensagem: ${err?.message ?? err}`);
+    await ctx.reply('⚠️ Tive um problema ao processar sua mensagem. Tenta de novo em alguns segundos.');
+  }
 });
 
-// ── Inicialização do Bot ─────────────────────────────────────
-bot.launch();
+// Comando /start
+bot.start((ctx) => {
+  addLog(`🚀 Novo usuário: ${ctx.from?.username ?? ctx.from?.id}`);
+  ctx.reply(
+    '👋 Fala! Eu sou o ConectaClaw, seu assistente de IA.\n\n' +
+      'Manda qualquer pergunta ou comando que eu te ajudo. 🤖'
+  );
+});
 
-console.log('🚀 ConectaClaw iniciado com sucesso!');
-console.log('Bot aguardando mensagens...');
+// Comando /model para ver o modelo em uso
+bot.command('model', (ctx) => {
+  ctx.reply(
+    `🧠 Modelo atual: \`${GROQ_MODEL}\`\n\n` +
+      `Modelos disponíveis: llama-3.3-70b-versatile, llama-3.1-8b-instant, openai/gpt-oss-120b`,
+    { parse_mode: 'Markdown' }
+  );
+});
 
-// Graceful shutdown
+// Inicialização
+async function main() {
+  addLog('🚀 ConectaClaw iniciado com sucesso!');
+  addLog('Bot aguardando mensagens...');
+
+  // Sobe o web terminal em paralelo
+  startWebTerminal();
+
+  // Inicia o polling do Telegram
+  await bot.launch();
+  addLog(`✅ Telegram conectado. Modelo em uso: ${GROQ_MODEL}`);
+}
+
+main().catch((err) => {
+  addLog(`❌ Erro fatal: ${err?.message ?? err}`);
+  process.exit(1);
+});
+
+// Encerramento gracioso (importante pro Render não derrubar sujo)
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
