@@ -21,7 +21,7 @@ export class MCPManager {
             });
 
             const client = new Client(
-                { name: "JoelBot-Client", version: "1.0.0" },
+                { name: "Conecta Claw🦞-Client", version: "1.0.0" },
                 { capabilities: {} }
             );
 

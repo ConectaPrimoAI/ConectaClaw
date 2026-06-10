@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
-import "./joelbot-agent.js";
+import "./conectaclaw-agent.js";
 
 process.on("uncaughtException", (error) => {
-  console.error("[JoelBot Core Exception]:", error);
+  console.error("[Conecta Claw🦞 Core Exception]:", error);
 });

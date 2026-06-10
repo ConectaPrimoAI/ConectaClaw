@@ -84,7 +84,7 @@ Bot aguardando mensagens...
 ```
 ConectaClaw/
 ├── src/
-│   └── joelbot-agent.ts    # Código principal do bot
+│   └── conectaclaw-agent.ts    # Código principal do bot
 ├── dist/                    # Código compilado
 ├── package.json
 ├── tsconfig.json
@@ -96,7 +96,7 @@ ConectaClaw/
 
 ### Alterar Modelo de IA
 
-No arquivo `src/joelbot-agent.ts`, linha com `model: 'mixtral-8x7b-32768'`, mude para:
+No arquivo `src/conectaclaw-agent.ts`, linha com `model: 'mixtral-8x7b-32768'`, mude para:
 - `'gemma-7b-it'`
 - `'llama2-70b-4096'`
 - Outro modelo disponível no Groq

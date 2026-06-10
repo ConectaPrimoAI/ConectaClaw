@@ -31,7 +31,7 @@ export class ImageSkill implements Skill {
             const response = await axios.get(imageUrl, {
                 responseType: 'arraybuffer',
                 timeout: 120000,
-                headers: { 'User-Agent': 'JoelBot/20.0' }
+                headers: { 'User-Agent': 'Conecta Claw🦞/20.0' }
             });
 
             if (!response.data || response.data.byteLength < 1000) {

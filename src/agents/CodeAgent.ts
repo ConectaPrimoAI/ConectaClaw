@@ -42,7 +42,7 @@ export class CodeAgent implements Agent {
                 messages: [
                     {
                         role: 'system',
-                        content: `Você é o CodeAgent do JoelBot — um programador sênior expert.
+                        content: `Você é o CodeAgent do Conecta Claw🦞 — um programador sênior expert.
 Regras:
 1. Sempre responda com código funcional e completo
 2. Use blocos de código com linguagem identificada (\`\`\`typescript, \`\`\`python, etc.)

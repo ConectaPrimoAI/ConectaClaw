@@ -36,7 +36,7 @@ export class HealthAgent implements Agent {
                 messages: [
                     {
                         role: 'system',
-                        content: `Você é o HealthAgent do JoelBot — um assistente de saúde EDUCACIONAL.
+                        content: `Você é o HealthAgent do Conecta Claw🦞 — um assistente de saúde EDUCACIONAL.
 REGRAS OBRIGATÓRIAS:
 1. NUNCA substitua consulta médica. Sempre termine com aviso.
 2. Não diagnostique doenças. Oriente a procurar profissional.

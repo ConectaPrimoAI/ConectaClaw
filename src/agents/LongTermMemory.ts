@@ -1,6 +1,6 @@
 /**
  * LongTermMemory.ts
- * Memória de longo prazo do JoelBot — capaz de lembrar de coisas de meses atrás.
+ * Memória de longo prazo do Conecta Claw🦞 — capaz de lembrar de coisas de meses atrás.
  *
  * Estrutura:
  *  - Fatos persistentes (key-value) salvos em JSON

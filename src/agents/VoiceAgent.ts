@@ -15,7 +15,7 @@ import axios from 'axios';
 import Groq from 'groq-sdk';
 import { addLog } from '../web-terminal.js';
 
-const TMP_DIR = path.join(os.tmpdir(), 'joelbot-voice');
+const TMP_DIR = path.join(os.tmpdir(), 'conectaclaw-voice');
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
 let groqInstance: Groq | null = null;

@@ -1,5 +1,5 @@
 /**
- * index.ts — Registro central de todos os agentes do JoelBot
+ * index.ts — Registro central de todos os agentes do Conecta Claw🦞
  * CORREÇÃO V24: MathAgent adicionado ao registro (estava faltando!).
  * VoiceInteractionAgent mantido como stub (desativado).
  */

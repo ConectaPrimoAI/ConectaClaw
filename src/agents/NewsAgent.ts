@@ -30,7 +30,7 @@ export class NewsAgent implements Agent {
         try {
             const res = await axios.get(url, {
                 timeout: 10000,
-                headers: { 'User-Agent': 'JoelBot/22.0' },
+                headers: { 'User-Agent': 'Conecta Claw🦞/22.0' },
                 responseType: 'text'
             });
             const xml = res.data as string;

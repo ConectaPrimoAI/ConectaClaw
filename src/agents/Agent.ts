@@ -1,6 +1,6 @@
 /**
  * Agent.ts
- * Interface base para todos os agentes de IA do JoelBot.
+ * Interface base para todos os agentes de IA do Conecta Claw🦞.
  *
  * CORREÇÃO V24: selectBestAgent agora usa LLM como árbitro quando há
  * ambiguidade, além de checar canHandle() corretamente em todos os agentes.

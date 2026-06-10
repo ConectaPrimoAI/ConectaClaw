@@ -66,7 +66,7 @@ export class FinanceAgent implements Agent {
                 messages: [
                     {
                         role: 'system',
-                        content: 'Você é o FinanceAgent do JoelBot. Ajude com finanças pessoais, investimentos, cotação de moedas (use dados que conhece). Sempre alerte: "não é aconselhamento financeiro".'
+                        content: 'Você é o FinanceAgent do Conecta Claw🦞. Ajude com finanças pessoais, investimentos, cotação de moedas (use dados que conhece). Sempre alerte: "não é aconselhamento financeiro".'
                     },
                     { role: 'user', content: ctx.userMessage }
                 ]

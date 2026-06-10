@@ -61,7 +61,7 @@ export class MemoryAgent implements Agent {
             const all = longTermMemory.getAllFormatted(100);
             const summaries = longTermMemory.getAllSummaries(ctx.userId)
                 .map(s => `📅 ${s.month}: ${s.summary}`).join('\n');
-            return `🧠 *Memória do JoelBot:*\n\n${all}\n\n📚 *Resumos mensais:*\n${summaries || '_(nenhum)_'}`;
+            return `🧠 *Memória do Conecta Claw🦞:*\n\n${all}\n\n📚 *Resumos mensais:*\n${summaries || '_(nenhum)_'}`;
         }
 
         // ── /historico ou /histórico ──────────────────────────
@@ -98,7 +98,7 @@ export class MemoryAgent implements Agent {
                     messages: [
                         {
                             role: 'system',
-                            content: 'Você é o JoelBot. O usuário perguntou sobre algo da memória. Use os FATOS e HISTÓRICO abaixo para responder. Se não encontrar, diga que não lembra. Seja breve e use bullet points.'
+                            content: 'Você é o Conecta Claw🦞. O usuário perguntou sobre algo da memória. Use os FATOS e HISTÓRICO abaixo para responder. Se não encontrar, diga que não lembra. Seja breve e use bullet points.'
                         },
                         {
                             role: 'user',

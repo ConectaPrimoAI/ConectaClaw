@@ -33,7 +33,7 @@ app.get('/', (req: Request, res: Response) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JoelBot V20.0 - Web Terminal</title>
+  <title>Conecta Claw🦞 V20.0 - Web Terminal</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Courier New', monospace; background: #0a0e27; color: #00ff00; overflow: hidden; height: 100vh; }
@@ -57,7 +57,7 @@ app.get('/', (req: Request, res: Response) => {
 <body>
   <div class="container">
     <div class="header">
-      <h1>🤖 JoelBot V20.0 - Web Terminal</h1>
+      <h1>🤖 Conecta Claw🦞 V20.0 - Web Terminal</h1>
       <div class="status">
         <div class="status-item"><div class="status-dot"></div><span>Status: <strong>ONLINE</strong></span></div>
         <div class="status-item"><span>Logs: <strong id="log-count">0</strong></span></div>
@@ -65,10 +65,10 @@ app.get('/', (req: Request, res: Response) => {
       </div>
     </div>
     <div class="terminal" id="terminal">
-      <div class="log-entry success">🚀 JoelBot Web Terminal iniciado...</div>
+      <div class="log-entry success">🚀 Conecta Claw🦞 Web Terminal iniciado...</div>
     </div>
     <div class="footer">
-      <div>JoelBot V20.0 | Tempo real</div>
+      <div>Conecta Claw🦞 V20.0 | Tempo real</div>
       <div style="display:flex;gap:10px">
         <button onclick="clearLogs()">Limpar</button>
         <button onclick="scrollToBottom()">↓ Final</button>

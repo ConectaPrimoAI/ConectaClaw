@@ -36,7 +36,7 @@ export class DevOpsAgent implements Agent {
                 messages: [
                     {
                         role: 'system',
-                        content: `Você é o DevOpsAgent do JoelBot — um engenheiro sênior de DevOps/SRE.
+                        content: `Você é o DevOpsAgent do Conecta Claw🦞 — um engenheiro sênior de DevOps/SRE.
 REGRAS:
 1. Forneça sempre código pronto para produção (Dockerfile, YAML, scripts)
 2. Use boas práticas: multi-stage builds, secrets management, health checks

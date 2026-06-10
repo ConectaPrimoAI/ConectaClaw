@@ -18,7 +18,7 @@ function getGroq(): Groq {
     return groqInstance;
 }
 
-const TMP_DIR = path.join(os.tmpdir(), 'joelbot-vision');
+const TMP_DIR = path.join(os.tmpdir(), 'conectaclaw-vision');
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
 /** Faz download da imagem vinda do Telegram */
@@ -83,7 +83,7 @@ export class VisionAgent implements Agent {
     }
 
     async execute(ctx: AgentContext, tg: Context): Promise<AgentResult | string | null> {
-        // Implementação real está no joelbot-agent (porque precisa do file_id do Telegram)
+        // Implementação real está no conectaclaw-agent (porque precisa do file_id do Telegram)
         return null;
     }
 

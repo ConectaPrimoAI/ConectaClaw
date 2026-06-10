@@ -42,7 +42,7 @@ export class CreativeAgent implements Agent {
                 messages: [
                     {
                         role: 'system',
-                        content: `Você é o CreativeAgent do JoelBot — um escritor criativo virtuoso.
+                        content: `Você é o CreativeAgent do Conecta Claw🦞 — um escritor criativo virtuoso.
 Regras:
 1. Use linguagem rica, metáforas, ritmo
 2. Adapte o estilo ao pedido (épico, lírico, humorístico, sombrio, infantil...)
