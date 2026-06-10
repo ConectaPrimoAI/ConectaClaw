@@ -1,0 +1,15 @@
+node_modules/
+dist/
+data/
+workspace/
+.env
+*.log
+.DS_Store
+voice_*.ogg
+doc_*.jpg
+img_*.jpg
+screenshot_*.png
+search_*.png
+image_*.jpg
+video_*.mp4
+tts_*.mp3
