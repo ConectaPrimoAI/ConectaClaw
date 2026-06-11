@@ -153,16 +153,14 @@ async function handleIntent(ctx: Context, text: string): Promise<string> {
 // ── /start ──────────────────────────────────────────────────
 bot.start((ctx) => {
     ctx.reply(
-        '👋 Bem-vindo ao Conecta Claw🦞 v21.0!\n\n' +
+        '👋 Bem-vindo ao Conecta Claw🦞!\n\n' +
         '🤖 *Posso te ajudar com:*\n' +
-        '   • 💬 Texto (conversa normal)\n' +
-        '   • 🎤 Áudio / voz (transcrevo e respondo em áudio)\n' +
+        '   • 💬 Texto\n' +
+        '   • 🎤 Áudio / voz \n' +
         '   • 🖼️ Foto (análise com visão)\n' +
-        '   • 🎨 /imagem <descrição> — gera imagem\n' +
-        '   • 🎬 /video <descrição> — gera vídeo\n' +
-        '   • 🔊 /voz <texto> — converto texto em áudio\n' +
-        '   • 🧮 /calcular <expr> — cálculos\n' +
-        '   • 🗑️ /clear — limpa histórico'
+        '   • 🎨 Imagem — Gero imagens profissionais pra você! \n' +
+        '   • 🎬 Video — Gero vídeos surreais\n' +
+        '   • 🗑️ /clear — limpa minha memória'
     );
 });
 
@@ -171,7 +169,7 @@ bot.command('clear', (ctx) => {
     const userId = ctx.from?.id;
     if (userId) { 
         conversationMemory.delete(userId); 
-        ctx.reply('✅ Histórico limpo!'); 
+        ctx.reply('✅ memória limpa!'); 
     }
 });
 
