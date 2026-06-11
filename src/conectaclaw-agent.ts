@@ -1,18 +1,8 @@
 /**
- * conectaclaw-agent.ts
- * Orquestrador principal do Conecta Claw🦞.
- *
- * v20.1 — correções:
- *  - Áudio: usa transcribeAudio (stream-based, compatível Node 18/20/22)
- *  - Imagem: Pollinations como padrão (grátis, sem token) + Replicate se configurado
- *  - Vídeo: Replicate (minimax/video-01) com polling e fallback
- *  - Integra de verdade o sistema de Agentes + Skills
- *  - Vision: analisa fotos via Llama 3.2 Vision (Groq)
- *  - Trata áudio (mp3, ogg, voice)
+ * conectaclaw-agent.ts v21.0
+ * Orquestrador principal com lógica de intenção, áudio, vídeo e imagem via Replicate
  */
 import { Telegraf, Context } from 'telegraf';
-// `InputFile` não é exportado oficialmente pelo telegraf v4; usamos `any` para os casts
-// de fonte de arquivo (path/stream) que o replyWith* aceita.
 import Groq from 'groq-sdk';
 import Replicate from 'replicate';
 import axios from 'axios';
@@ -21,14 +11,11 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { startWebTerminal, addLog } from './web-terminal.js';
 import { startReminderManager } from './reminderManager.js';
-
-// ── Agentes + Skills (sistema real) ─────────────────────────
-import { agentRegistry, AgentContext, AgentResult } from './agents/Agent.js';
-import './agents/index.js'; // popula o agentRegistry
+import { agentRegistry } from './agents/Agent.js';
+import './agents/index.js';
 import { registry as skillRegistry } from './skills/index.js';
 import { transcribeAudio, synthesizeSpeech } from './agents/VoiceAgent.js';
 import { analyzeImage } from './agents/VisionAgent.js';
-import { VisionAgent } from './agents/VisionAgent.js';
 
 // ── Validação ───────────────────────────────────────────────
 if (!process.env.TELEGRAM_TOKEN || !process.env.GROQ_API_KEY) {
@@ -38,16 +25,14 @@ if (!process.env.TELEGRAM_TOKEN || !process.env.GROQ_API_KEY) {
 
 export const bot: Telegraf<Context> = new Telegraf(process.env.TELEGRAM_TOKEN);
 export const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
 const replicate = process.env.REPLICATE_API_TOKEN
     ? new Replicate({ auth: process.env.REPLICATE_API_TOKEN.trim() })
     : null;
 
-// Diretório temporário dedicado (evita encher disco do app em produção)
 const TMP_DIR = path.join(os.tmpdir(), 'conectaclaw');
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
-// ── Memória de conversa por usuário ─────────────────────────
+// ── Memória de conversa ─────────────────────────────────────
 interface ConversationMemory {
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     timestamp: number;
@@ -62,6 +47,7 @@ function getConversationMemory(userId: number): ConversationMemory {
     }
     return conversationMemory.get(userId)!;
 }
+
 function clearOldMemories() {
     const now = Date.now();
     for (const [userId, memory] of conversationMemory.entries()) {
@@ -70,7 +56,7 @@ function clearOldMemories() {
 }
 setInterval(clearOldMemories, 5 * 60 * 1000);
 
-// ── Helper: atualiza mensagem de status (uma única editável) ─
+// ── Atualizador de status ───────────────────────────────────
 async function createStatusUpdater(ctx: Context, initialText: string) {
     let statusMsg: { message_id: number } | null = null;
     try { statusMsg = await ctx.reply(initialText); } catch {}
@@ -94,12 +80,11 @@ async function createStatusUpdater(ctx: Context, initialText: string) {
         delete: async () => {
             if (!statusMsg) return;
             try { await ctx.telegram.deleteMessage(ctx.chat!.id, statusMsg.message_id); } catch {}
-        },
-        messageId: statusMsg?.message_id
+        }
     };
 }
 
-// ── Helper: envia arquivo (foto/vídeo/doc) com fallback de caption
+// ── Enviar arquivo ─────────────────────────────────────────
 async function sendSkillFile(ctx: Context, result: any): Promise<boolean> {
     if (!result || !result.file) return false;
     const filePath = result.file;
@@ -107,7 +92,7 @@ async function sendSkillFile(ctx: Context, result: any): Promise<boolean> {
     const caption = (result.text || '').substring(0, 1024);
 
     if (!fs.existsSync(filePath)) {
-        addLog(`❌ Arquivo de skill não existe: ${filePath}`);
+        addLog(`❌ Arquivo não existe: ${filePath}`);
         return false;
     }
 
@@ -123,80 +108,60 @@ async function sendSkillFile(ctx: Context, result: any): Promise<boolean> {
         }
         return true;
     } catch (e: any) {
-        addLog(`❌ Falha ao enviar arquivo (${type}): ${e.message}`);
-        try { await ctx.replyWithDocument({ source: filePath } as any, { caption: caption.substring(0, 200) }); return true; }
-        catch (e2: any) { addLog(`❌ Fallback doc também falhou: ${e2.message}`); return false; }
+        addLog(`❌ Erro ao enviar arquivo (${type}): ${e.message}`);
+        return false;
     }
 }
 
-// ── Executor de skills a partir de tags [SYSTEM_X: ...] ─────
-async function executeSkillTags(tags: string[], ctx: Context, status: any): Promise<string | null> {
-    if (!tags || tags.length === 0) return null;
-    let lastText: string | null = null;
+// ── Lógica de Intenção com LLM ──────────────────────────────
+const systemPrompt = `Você é o Conecta Claw🦞, um assistente brasileiro extremamente inteligente, prestativo e com personalidade humana.
+Sua missão é ajudar o usuário da melhor forma possível.
+Mantenha um tom amigável, direto e natural. Não use robotismos.
+Respostas devem ser concisas mas informativas.`;
 
-    for (const tag of tags) {
-        const skill = await skillRegistry.selectBestSkill(tag);
-        if (!skill) {
-            addLog(`⚠️ Tag sem skill correspondente: ${tag.substring(0, 40)}`);
-            continue;
-        }
-        addLog(`🎯 Skill: ${skill.name} ← ${tag.substring(0, 60)}`);
-
-        try {
-            const res = await skill.execute(tag, ctx);
-            if (res == null) continue;
-
-            // Resultado é objeto com arquivo? Envia como mídia
-            if (typeof res === 'object' && 'file' in res && res.file) {
-                await sendSkillFile(ctx, res);
-                lastText = res.text || lastText;
-            } else if (typeof res === 'string' && res.length > 0) {
-                lastText = res;
-            }
-        } catch (e: any) {
-            addLog(`❌ Erro na skill ${skill.name}: ${e.message}`);
-            if (status?.update) await status.update(`❌ Erro em ${skill.name}: ${e.message.substring(0, 100)}`);
-        }
-    }
-
-    return lastText;
-}
-
-
-    // --- Lógica de Intenção e Resposta Humana ---
-    const systemPrompt = `Você é o Conecta Claw🦞, um assistente brasileiro extremamente inteligente, prestativo e com personalidade humana. 
-    Sua missão é ajudar o usuário da melhor forma possível. 
-    Se o usuário pedir para gerar imagem, vídeo ou áudio, use as ferramentas disponíveis.
-    Mantenha um tom amigável, direto e natural. Não use robotismos.
-    Se o usuário enviar um áudio, responda de forma empática e também em áudio.`;
-
-    async function handleIntent(ctx: Context, text: string) {
-        const memory = getConversationMemory(ctx.from!.id);
+async function handleIntent(ctx: Context, text: string): Promise<string> {
+    const userId = ctx.from!.id;
+    const memory = getConversationMemory(userId);
+    
+    try {
         const response = await groq.chat.completions.create({
             model: "llama-3.3-70b-versatile",
             messages: [
                 { role: "system", content: systemPrompt },
                 ...memory.messages,
                 { role: "user", content: text }
-            ]
+            ],
+            max_tokens: 1024,
+            temperature: 0.7
         });
-        return response.choices[0].message.content;
+        
+        const reply = response.choices[0].message.content || '';
+        memory.messages.push({ role: 'user', content: text });
+        memory.messages.push({ role: 'assistant', content: reply });
+        if (memory.messages.length > MAX_MEMORY_MESSAGES) {
+            memory.messages = memory.messages.slice(-MAX_MEMORY_MESSAGES);
+        }
+        memory.timestamp = Date.now();
+        
+        return reply;
+    } catch (e: any) {
+        addLog(`❌ Intent error: ${e.message}`);
+        return '❌ Desculpe, tive um problema ao processar sua mensagem.';
     }
+}
 
 // ── /start ──────────────────────────────────────────────────
 bot.start((ctx) => {
     ctx.reply(
-        '👋 Bem-vindo ao Conecta Claw🦞 v20.1!\n\n' +
+        '👋 Bem-vindo ao Conecta Claw🦞 v21.0!\n\n' +
         '🤖 *Posso te ajudar com:*\n' +
         '   • 💬 Texto (conversa normal)\n' +
-        '   • 🎤 Áudio / voz (manda que eu transcrevo e respondo)\n' +
-        '   • 🖼️ Foto (manda que eu descrevo/análise)\n' +
+        '   • 🎤 Áudio / voz (transcrevo e respondo em áudio)\n' +
+        '   • 🖼️ Foto (análise com visão)\n' +
         '   • 🎨 /imagem <descrição> — gera imagem\n' +
         '   • 🎬 /video <descrição> — gera vídeo\n' +
         '   • 🔊 /voz <texto> — converto texto em áudio\n' +
-        '   • 🌐 /site <url> — tiro print e extraio texto\n' +
         '   • 🧮 /calcular <expr> — cálculos\n' +
-        '   • 🧠 /agentes — ver agentes disponíveis\n' +
         '   • 🗑️ /clear — limpa histórico'
     );
 });
@@ -204,50 +169,36 @@ bot.start((ctx) => {
 // ── /clear ──────────────────────────────────────────────────
 bot.command('clear', (ctx) => {
     const userId = ctx.from?.id;
-    if (userId) { conversationMemory.delete(userId); ctx.reply('✅ Histórico limpo!'); }
+    if (userId) { 
+        conversationMemory.delete(userId); 
+        ctx.reply('✅ Histórico limpo!'); 
+    }
 });
 
-// ── /model — info do sistema ────────────────────────────────
+// ── /model — info ───────────────────────────────────────────
 bot.command('model', (ctx) => {
-    const agentCount = agentRegistry.getAll().length;
     ctx.reply(
         `🧠 *Conecta Claw🦞 — Status*\n\n` +
         `LLM: \`llama-3.3-70b-versatile\` (Groq)\n` +
         `🎤 Áudio: \`whisper-large-v3\` (Groq)\n` +
-        `🔊 TTS: Google TTS (pt-BR)\n` +
+        `🔊 TTS: Replicate (Kokoro) + Google (fallback)\n` +
         `👁️ Visão: \`llama-3.2-90b-vision-preview\` (Groq)\n` +
-        `🎨 Imagem: Pollinations (FLUX) + ${replicate ? 'Replicate (flux-schnell)' : 'Replicate (off)'}\n` +
-        `🎬 Vídeo: ${replicate ? 'Replicate (minimax/video-01)' : 'Replicate (off)'}\n` +
-        `🤖 Agentes: ${agentCount}\n\n` +
-        `${replicate ? '✅' : '⚠️'} Replicate: ${replicate ? 'configurado' : 'não configurado — vídeo desabilitado'}`
+        `🎨 Imagem: Pollinations (FLUX) + Replicate\n` +
+        `🎬 Vídeo: ${replicate ? 'Replicate (minimax/video-01)' : 'Desabilitado'}\n\n` +
+        `${replicate ? '✅' : '⚠️'} Replicate: ${replicate ? 'configurado' : 'não configurado'}`
     );
-});
-
-// ── /agentes — lista os agentes registrados ─────────────────
-bot.command('agentes', (ctx) => {
-    const all = agentRegistry.getAll();
-    const byCategory: Record<string, string[]> = {};
-    for (const a of all) {
-        if (!byCategory[a.category]) byCategory[a.category] = [];
-        byCategory[a.category].push(`• ${a.name} — ${a.description.substring(0, 60)}`);
-    }
-    let txt = `🤖 *${all.length} agentes registrados:*\n\n`;
-    for (const [cat, list] of Object.entries(byCategory)) {
-        txt += `*${cat.toUpperCase()}*\n${list.join('\n')}\n\n`;
-    }
-    ctx.reply(txt, { parse_mode: 'Markdown' }).catch(() => ctx.reply(txt));
 });
 
 // ── /imagem <prompt> ────────────────────────────────────────
 bot.command('imagem', async (ctx) => {
     const prompt = ctx.message.text.replace(/^\/imagem\s*/i, '').trim();
     if (!prompt) {
-        return ctx.reply('🎨 Uso: `/imagem <descrição>`\nEx: `/imagem gato astronauta`', { parse_mode: 'Markdown' });
+        return ctx.reply('🎨 Uso: `/imagem <descrição>`', { parse_mode: 'Markdown' });
     }
 
     const status = await createStatusUpdater(ctx, '🎨 Gerando imagem...');
 
-    // ── Tentativa 1: Pollinations (grátis, sempre disponível) ─
+    // Tentativa 1: Pollinations
     try {
         const seed = Math.floor(Math.random() * 999999);
         const encodedPrompt = encodeURIComponent(prompt);
@@ -256,7 +207,7 @@ bot.command('imagem', async (ctx) => {
         const response = await axios.get(imageUrl, {
             responseType: 'arraybuffer',
             timeout: 120000,
-            headers: { 'User-Agent': 'ConectaClaw/20.1' }
+            headers: { 'User-Agent': 'ConectaClaw/21.0' }
         });
 
         if (response.data && response.data.byteLength > 1000) {
@@ -265,37 +216,28 @@ bot.command('imagem', async (ctx) => {
             await status.delete();
             await ctx.replyWithPhoto(
                 { source: outPath } as any,
-                { caption: `🎨 ${prompt}\n_Modelo: FLUX (Pollinations)_` }
+                { caption: `🎨 ${prompt}\n_FLUX (Pollinations)_` }
             );
-            // Limpa o arquivo depois de enviar (telegram já tem)
             setTimeout(() => { try { fs.unlinkSync(outPath); } catch {} }, 60_000);
             return;
         }
-        throw new Error('Pollinations retornou payload vazio');
     } catch (e1: any) {
         addLog(`⚠️ Pollinations falhou: ${e1.message?.substring(0, 80)}`);
-        await status.update('⚠️ Pollinations falhou, tentando Replicate...');
     }
 
-    // ── Tentativa 2: Replicate (se configurado) ────────────────
+    // Tentativa 2: Replicate
     if (replicate) {
         try {
+            await status.update('⚠️ Tentando Replicate...');
             const output = await replicate.run(
                 'black-forest-labs/flux-schnell',
                 { input: { prompt, num_inference_steps: 4, aspect_ratio: '1:1', output_format: 'jpg', output_quality: 80 } }
             ) as any;
             const imageUrl = Array.isArray(output) ? output[0] : output;
 
-            // Pode ser URL ou ReadableStream
             if (typeof imageUrl === 'string') {
                 await status.delete();
-                await ctx.replyWithPhoto(imageUrl, { caption: `🎨 ${prompt}\n_Modelo: flux-schnell (Replicate)_` });
-                return;
-            }
-            if (imageUrl && typeof imageUrl === 'object' && typeof imageUrl.url === 'function') {
-                const url = imageUrl.url();
-                await status.delete();
-                await ctx.replyWithPhoto(url, { caption: `🎨 ${prompt}\n_Modelo: flux-schnell (Replicate)_` });
+                await ctx.replyWithPhoto(imageUrl, { caption: `🎨 ${prompt}\n_flux-schnell (Replicate)_` });
                 return;
             }
         } catch (e2: any) {
@@ -304,34 +246,27 @@ bot.command('imagem', async (ctx) => {
     }
 
     await status.delete();
-    ctx.reply('❌ Não consegui gerar a imagem agora. Tenta de novo em alguns segundos.').catch(() => {});
+    ctx.reply('❌ Não consegui gerar a imagem agora.').catch(() => {});
 });
 
 // ── /video <prompt> ─────────────────────────────────────────
 bot.command('video', async (ctx) => {
     const prompt = ctx.message.text.replace(/^\/video\s*/i, '').trim();
     if (!prompt) {
-        return ctx.reply('🎬 Uso: `/video <descrição>`\nEx: `/video ondas do mar no pôr do sol`', { parse_mode: 'Markdown' });
+        return ctx.reply('🎬 Uso: `/video <descrição>`', { parse_mode: 'Markdown' });
     }
     if (!replicate) {
-        return ctx.reply(
-            '⚠️ *Vídeo requer REPLICATE_API_TOKEN.*\n\n' +
-            '1. Crie conta em https://replicate.com\n' +
-            '2. Gere um token em https://replicate.com/account/api-tokens\n' +
-            '3. Adicione `REPLICATE_API_TOKEN=r8_...` no .env ou no Render\n' +
-            '4. Reinicie o bot\n\n' +
-            '_(Custa cerca de US$ 0,05 por vídeo de 5s)_'
-        , { parse_mode: 'Markdown' }).catch(() => {});
+        return ctx.reply('⚠️ *Vídeo requer REPLICATE_API_TOKEN.*\nConfigure em .env ou variáveis de ambiente.', { parse_mode: 'Markdown' }).catch(() => {});
     }
 
-    const status = await createStatusUpdater(ctx, '🎬 Iniciando geração do vídeo...');
+    const status = await createStatusUpdater(ctx, '🎬 Iniciando geração de vídeo...');
     const startTime = Date.now();
     let elapsed = 0;
     const updateTimer = setInterval(async () => {
         elapsed = Math.floor((Date.now() - startTime) / 1000);
         const min = Math.floor(elapsed / 60);
         const sec = elapsed % 60;
-        await status.update(`🎬 Gerando vídeo... ${min}m ${sec}s\n_(costuma levar 1-3 min)_`);
+        await status.update(`🎬 Gerando vídeo... ${min}m ${sec}s`);
     }, 5000);
 
     try {
@@ -342,36 +277,32 @@ bot.command('video', async (ctx) => {
         clearInterval(updateTimer);
 
         const videoUrl = Array.isArray(output) ? output[0] : output;
-        const totalTime = Math.floor((Date.now() - startTime) / 1000);
         const finalUrl = (videoUrl && typeof videoUrl === 'object' && typeof videoUrl.url === 'function') ? videoUrl.url() : videoUrl;
 
         await status.delete();
         await ctx.replyWithVideo(finalUrl, {
-            caption: `🎬 ${prompt}\n⏱️ Gerado em ${totalTime}s`,
+            caption: `🎬 ${prompt}`,
             supports_streaming: true
         });
     } catch (e: any) {
         clearInterval(updateTimer);
         addLog(`❌ Vídeo erro: ${e.message?.substring(0, 200)}`);
         await status.delete();
-        const msg = e.message?.includes('402') || e.message?.includes('credit')
-            ? '❌ Conta Replicate sem créditos. Adicione saldo em replicate.com/account/billing'
-            : `❌ Erro ao gerar vídeo: ${e.message?.substring(0, 200) || 'desconhecido'}`;
-        ctx.reply(msg).catch(() => {});
+        ctx.reply(`❌ Erro ao gerar vídeo: ${e.message?.substring(0, 100) || 'desconhecido'}`).catch(() => {});
     }
 });
 
-// ── /voz <texto> — TTS ─────────────────────────────────────
+// ── /voz <texto> — TTS ──────────────────────────────────────
 bot.command('voz', async (ctx) => {
     const text = ctx.message.text.replace(/^\/voz\s*/i, '').trim();
-    if (!text) return ctx.reply('🔊 Uso: `/voz <texto>`\nEx: `/voz Olá, mundo!`', { parse_mode: 'Markdown' });
+    if (!text) return ctx.reply('🔊 Uso: `/voz <texto>`', { parse_mode: 'Markdown' });
 
     const status = await createStatusUpdater(ctx, '🔊 Gerando áudio...');
     try {
         const audioPath = await synthesizeSpeech(text, 'pt-BR');
         if (!audioPath) {
             await status.delete();
-            return ctx.reply('❌ Não consegui gerar o áudio agora. Tente novamente.');
+            return ctx.reply('❌ Não consegui gerar o áudio agora.');
         }
         await status.delete();
         await ctx.replyWithVoice({ source: audioPath } as any, { caption: `🔊 _"${text.substring(0, 80)}"_` });
@@ -383,58 +314,18 @@ bot.command('voz', async (ctx) => {
     }
 });
 
-// ── /site <url> — print + extração ──────────────────────────
-bot.command('site', async (ctx) => {
-    const text = ctx.message.text.replace(/^\/site\s*/i, '').trim();
-    const urlMatch = text.match(/https?:\/\/\S+/);
-    const url = urlMatch ? urlMatch[0] : text;
-    if (!url) return ctx.reply('🌐 Uso: `/site <url>`\nEx: `/site https://exemplo.com`', { parse_mode: 'Markdown' });
-
-    const status = await createStatusUpdater(ctx, '🌐 Acessando site...');
-    try {
-        const skill = await skillRegistry.selectBestSkill(`[SYSTEM_BROWSER: acao="screenshot", url="${url}"]`);
-        if (!skill) {
-            await status.delete();
-            return ctx.reply('❌ BrowserSkill não disponível.');
-        }
-        const res = await skill.execute(`[SYSTEM_BROWSER: acao="screenshot", url="${url}"]`, ctx);
-        if (typeof res === 'object' && res?.file) {
-            await status.delete();
-            await sendSkillFile(ctx, res);
-        } else {
-            await status.delete();
-            ctx.reply(typeof res === 'string' ? res : '❌ Erro desconhecido.').catch(() => {});
-        }
-    } catch (e: any) {
-        await status.delete();
-        addLog(`❌ /site: ${e.message}`);
-        ctx.reply('❌ Erro ao acessar o site. O servidor pode não ter Chrome instalado.').catch(() => {});
-    }
-});
-
 // ── /calcular <expr> ────────────────────────────────────────
 bot.command('calcular', async (ctx) => {
     const expr = ctx.message.text.replace(/^\/calcular\s*/i, '').trim();
-    if (!expr) return ctx.reply('🔢 Uso: `/calcular <expressão>`\nEx: `/calcular 2+2*5`', { parse_mode: 'Markdown' });
+    if (!expr) return ctx.reply('🔢 Uso: `/calcular <expressão>`', { parse_mode: 'Markdown' });
 
     const status = await createStatusUpdater(ctx, '🔢 Calculando...');
     try {
-        // Tenta eval seguro de expressões simples
-        let calcResult: string | null = null;
-        if (/^[\d\s+\-*/().,%^]+$/.test(expr)) {
-            try {
-                // eslint-disable-next-line no-new-func
-                const r = Function(`"use strict"; return (${expr});`)();
-                if (typeof r === 'number' && isFinite(r)) calcResult = String(r);
-            } catch {}
-        }
-
-        const groq_ = groq;
-        const chat = await groq_.chat.completions.create({
+        const chat = await groq.chat.completions.create({
             model: 'llama-3.1-8b-instant',
             temperature: 0,
             messages: [
-                { role: 'system', content: 'Você é o MathAgent. Resolva o problema com precisão. Mostre o resultado em **negrito**.' },
+                { role: 'system', content: 'Você é o MathAgent. Resolva com precisão. Mostre o resultado em **negrito**.' },
                 { role: 'user', content: expr }
             ]
         });
@@ -455,7 +346,7 @@ bot.on('photo', async (ctx) => {
     const status = await createStatusUpdater(ctx, '👁️ Analisando imagem...');
     try {
         const photos = (ctx.message as any).photo;
-        const photo = photos[photos.length - 1]; // maior resolução
+        const photo = photos[photos.length - 1];
         const tg: any = (ctx as any).telegram;
         const fileLink = await tg.getFileLink(photo.file_id);
         const dest = path.join(TMP_DIR, `img_${Date.now()}.jpg`);
@@ -465,7 +356,7 @@ bot.on('photo', async (ctx) => {
         const caption = ctx.message.caption || 'Descreva esta imagem em detalhes, em português.';
         const desc = await analyzeImage(dest, caption);
         await status.delete();
-        ctx.reply(`👁️ *Análise da imagem:*\n\n${desc}`).catch(() => {});
+        ctx.reply(`👁️ *Análise:*\n\n${desc}`).catch(() => {});
         setTimeout(() => { try { fs.unlinkSync(dest); } catch {} }, 60_000);
     } catch (e: any) {
         await status.delete();
@@ -474,16 +365,14 @@ bot.on('photo', async (ctx) => {
     }
 });
 
-// ── Handler de VOZ (transcrição + resposta) ─────────────────
+// ── Handler de VOZ (transcrição + resposta em áudio) ────────
 async function handleAudioMessage(ctx: Context, fileId: string, mimeHint = 'audio/ogg') {
     const userId = ctx.from?.id;
     if (!userId) return;
 
-    const memory = getConversationMemory(userId);
     const status = await createStatusUpdater(ctx, '🎤 Transcrevendo áudio...');
 
     try {
-        // ── Download do áudio ────────────────────────────────────
         const tg: any = (ctx as any).telegram;
         const fileLink = await tg.getFileLink(fileId);
         const ext = mimeHint.includes('mp4') || mimeHint.includes('m4a') ? 'm4a' :
@@ -492,36 +381,26 @@ async function handleAudioMessage(ctx: Context, fileId: string, mimeHint = 'audi
         const dl = await axios.get(fileLink.href, { responseType: 'arraybuffer', timeout: 60000 });
         fs.writeFileSync(audioPath, Buffer.from(dl.data));
 
-        // ── Transcrição via Whisper (Groq) — usa stream, compatível Node 18+ ─
         const userText = (await transcribeAudio(audioPath)).trim() || '(não consegui entender o áudio)';
         await status.update(`🎤 _"${userText.substring(0, 100)}"_`);
 
-        // ── LLM responde ─────────────────────────────────────────
         await ctx.sendChatAction('typing');
-        memory.messages.push({ role: 'user', content: userText });
-        if (memory.messages.length > MAX_MEMORY_MESSAGES) memory.messages = memory.messages.slice(-MAX_MEMORY_MESSAGES);
+        const replyText = await handleIntent(ctx, userText);
 
-        const chat = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
-            messages: memory.messages,
-            max_tokens: 1024,
-            temperature: 0.7
-        });
-
-        const assistantMessage = chat.choices[0]?.message?.content || 'Desculpe, não consegui responder.';
-        memory.messages.push({ role: 'assistant', content: assistantMessage });
-        memory.timestamp = Date.now();
+        await status.update('🔊 Gerando resposta em áudio...');
+        const audioReplyPath = await synthesizeSpeech(replyText, 'pt-BR');
 
         await status.delete();
-
-        // Envia a transcrição
         await ctx.reply(`🎤 _"${userText}"_`, { parse_mode: 'Markdown' }).catch(() => {});
+        
+        if (audioReplyPath) {
+            await ctx.replyWithVoice({ source: audioReplyPath } as any, { caption: '🔊 Resposta em áudio' });
+            setTimeout(() => { try { fs.unlinkSync(audioReplyPath); } catch {} }, 60_000);
+        }
+        
+        try { await ctx.reply(replyText, { parse_mode: 'Markdown' }); }
+        catch { await ctx.reply(replyText); }
 
-        // Envia a resposta
-        try { await ctx.reply(assistantMessage, { parse_mode: 'Markdown' }); }
-        catch { await ctx.reply(assistantMessage); }
-
-        // Limpa arquivo
         setTimeout(() => { try { fs.unlinkSync(audioPath); } catch {} }, 30_000);
     } catch (e: any) {
         await status.delete();
@@ -540,85 +419,20 @@ bot.on('audio', async (ctx) => {
     await handleAudioMessage(ctx, ctx.message.audio.file_id, ctx.message.audio.mime_type || 'audio/mpeg');
 });
 
-// ── Handler de TEXTO (rota via Agentes) ─────────────────────
+// ── Handler de TEXTO (rota via intenção) ────────────────────
 bot.on('text', async (ctx) => {
     const userId = ctx.from?.id;
     if (!userId) return;
     const userMessage = ctx.message.text;
-    const memory = getConversationMemory(userId);
 
     const status = await createStatusUpdater(ctx, '🤔 Pensando...');
 
     try {
-        // ── Roteamento via AgentRegistry ─────────────────────────
-        const agentCtx: AgentContext = {
-            userId,
-            userMessage,
-            userName: ctx.from?.username || ctx.from?.first_name,
-            history: memory.messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-            extra: {}
-        };
-
-        const agent = await agentRegistry.selectBestAgent(agentCtx);
-
-        // Se um agente foi escolhido e não é o VisionAgent (que é só pra imagens)
-        if (agent && !(agent instanceof VisionAgent)) {
-            addLog(`🤖 Agente: ${agent.name}`);
-            const result = await agent.execute(agentCtx, ctx);
-            await status.delete();
-
-            let replyText: string | null = null;
-            let sentMedia = false;
-
-            if (typeof result === 'string') {
-                replyText = result;
-            } else if (result) {
-                if (result.text) replyText = result.text;
-                if (result.file) {
-                    sentMedia = await sendSkillFile(ctx, result);
-                }
-                // Se o agente retorna tags de skill, executa
-                if (result.tags && result.tags.length > 0) {
-                    const skillText = await executeSkillTags(result.tags, ctx, status);
-                    if (skillText) replyText = replyText ? `${replyText}\n\n${skillText}` : skillText;
-                    sentMedia = true;
-                }
-            }
-
-            if (replyText) {
-                try { await ctx.reply(replyText, { parse_mode: 'Markdown' }); }
-                catch { await ctx.reply(replyText); }
-            } else if (!sentMedia) {
-                await ctx.reply('✅ Tarefa concluída!');
-            }
-
-            // Atualiza memória
-            memory.messages.push({ role: 'user', content: userMessage });
-            if (replyText) memory.messages.push({ role: 'assistant', content: replyText });
-            if (memory.messages.length > MAX_MEMORY_MESSAGES) memory.messages = memory.messages.slice(-MAX_MEMORY_MESSAGES);
-            memory.timestamp = Date.now();
-            return;
-        }
-
-        // ── Fallback: LLM puro ──────────────────────────────────
-        await ctx.sendChatAction('typing');
-        memory.messages.push({ role: 'user', content: userMessage });
-        if (memory.messages.length > MAX_MEMORY_MESSAGES) memory.messages = memory.messages.slice(-MAX_MEMORY_MESSAGES);
-
-        const response = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
-            messages: memory.messages,
-            max_tokens: 1024,
-            temperature: 0.7
-        });
-
-        const assistantMessage = response.choices[0]?.message?.content || 'Desculpe, não consegui responder.';
-        memory.messages.push({ role: 'assistant', content: assistantMessage });
-        memory.timestamp = Date.now();
-
+        const reply = await handleIntent(ctx, userMessage);
         await status.delete();
-        try { await ctx.reply(assistantMessage, { parse_mode: 'Markdown' }); }
-        catch { await ctx.reply(assistantMessage); }
+        
+        try { await ctx.reply(reply, { parse_mode: 'Markdown' }); }
+        catch { await ctx.reply(reply); }
 
     } catch (e: any) {
         await status.delete();
@@ -639,43 +453,8 @@ startWebTerminal();
 startReminderManager(bot);
 bot.launch();
 
-console.log('🚀 Conecta Claw🦞 v20.1 iniciado!');
-console.log(`🤖 Agentes: ${agentRegistry.getAll().length}`);
-console.log(`🛠️ Skills: ${skillRegistry.getAll().length}`);
-console.log(`🎨 Replicate: ${replicate ? '✅' : '❌ (vídeo desabilitado)'}`);
+console.log('🚀 Conecta Claw🦞 v21.0 iniciado!');
+console.log(`🎨 Replicate: ${replicate ? '✅ configurado' : '❌ desabilitado'}`);
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-
-bot.on('voice', async (ctx) => {
-    const status = await createStatusUpdater(ctx, '🎤 Ouvindo áudio...');
-    try {
-        const fileId = (ctx.message as any).voice.file_id;
-        const oggPath = await getTelegramFile(ctx, fileId);
-        const text = await transcribeAudio(oggPath);
-        
-        if (!text) {
-            await status.update('❌ Não consegui entender o áudio.');
-            return;
-        }
-
-        await status.update(`📝 Transcrição: "${text}"\n\n🤔 Pensando na resposta...`);
-        const replyText = await handleIntent(ctx, text);
-        
-        await status.update('🔊 Gerando resposta em áudio...');
-        const audioPath = await synthesizeSpeech(replyText);
-        
-        if (audioPath) {
-            await ctx.replyWithVoice({ source: audioPath });
-            await ctx.reply(replyText);
-        } else {
-            await ctx.reply(replyText);
-        }
-    } catch (e: any) {
-        addLog(`❌ Erro no processamento de áudio: ${e.message}`);
-        await ctx.reply('Desculpe, tive um problema ao processar seu áudio.');
-    } finally {
-        await status.delete();
-    }
-});

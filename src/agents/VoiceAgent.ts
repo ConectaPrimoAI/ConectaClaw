@@ -2,7 +2,7 @@
  * VoiceAgent.ts
  * Agente responsável por:
  *  - Transcrever áudios recebidos (Whisper via Groq)
- *  - Sintetizar respostas em áudio (Google TTS)
+ *  - Sintetizar respostas em áudio (Replicate TTS com fallback Google)
  *  - Manter histórico de mensagens em texto + áudio
  */
 import { Agent, AgentContext, AgentResult } from './Agent.js';
@@ -13,6 +13,7 @@ import * as os from 'node:os';
 import googleTTS from 'google-tts-api';
 import axios from 'axios';
 import Groq from 'groq-sdk';
+import Replicate from 'replicate';
 import { addLog } from '../web-terminal.js';
 
 const TMP_DIR = path.join(os.tmpdir(), 'conectaclaw-voice');
@@ -56,29 +57,42 @@ export async function transcribeAudio(filePath: string): Promise<string> {
     }
 }
 
-/** Sintetiza texto em MP3 via Google TTS */
+/** Sintetiza texto em MP3 via Replicate (Kokoro-82M) com fallback Google TTS */
+export async function synthesizeSpeech(text: string, lang: string = 'pt-BR'): Promise<string> {
+    if (!text) return '';
 
-/** Sintetiza texto em MP3 via Replicate (Kokoro-82M ou similar) */
-export async function synthesizeSpeech(text: string): Promise<string> {
-    try {
-        if (!text || !process.env.REPLICATE_API_TOKEN) return '';
-        const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
-        
-        // Usando um modelo de TTS de alta qualidade no Replicate
-        const output = await replicate.run(
-            "lucataco/kokoro-82m:dfdfc08348274bc84c1728f9906665046243cf20f8629f3f45230986e3926861",
-            { input: { text: text, speed: 1, voice: "af_heart" } }
-        ) as any;
+    // ── Tentativa 1: Replicate (Kokoro-82M de alta qualidade) ─
+    if (process.env.REPLICATE_API_TOKEN) {
+        try {
+            const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
+            const output = await replicate.run(
+                'lucataco/kokoro-82m:dfdfc08348274bc84c1728f9906665046243cf20f8629f3f45230986e3926861',
+                { input: { text, speed: 1, voice: 'af_heart' } }
+            ) as any;
 
-        const audioUrl = Array.isArray(output) ? output[0] : output;
-        const outPath = path.join(TMP_DIR, `tts_replicate_${Date.now()}.mp3`);
-        await downloadToFile(audioUrl, outPath);
-        return outPath;
-    } catch (e: any) {
-        addLog(`❌ Replicate TTS erro: ${e.message}`);
-        return '';
+            const audioUrl = Array.isArray(output) ? output[0] : output;
+            if (audioUrl && typeof audioUrl === 'string') {
+                const outPath = path.join(TMP_DIR, `tts_replicate_${Date.now()}.mp3`);
+                await downloadToFile(audioUrl, outPath);
+                addLog(`🔊 TTS Replicate: ${text.length} chars → ${path.basename(outPath)}`);
+                return outPath;
+            }
+        } catch (e: any) {
+            addLog(`⚠️ Replicate TTS falhou: ${e.message?.substring(0, 100)}`);
+        }
     }
-}
+
+    // ── Tentativa 2: Google TTS (fallback) ─────────────────────
+    try {
+        const maxLen = 100;
+        const chunks: string[] = [];
+        let restante = text;
+
+        while (restante.length > 0) {
+            if (restante.length <= maxLen) {
+                chunks.push(restante);
+                break;
+            }
 
             // Tenta quebrar em pontuação
             const trecho = restante.substring(0, maxLen);
@@ -107,7 +121,7 @@ export async function synthesizeSpeech(text: string): Promise<string> {
 
         const outPath = path.join(TMP_DIR, `tts_${Date.now()}.mp3`);
         fs.writeFileSync(outPath, Buffer.concat(buffers));
-        addLog(`🔊 TTS: ${text.length} chars → ${path.basename(outPath)}`);
+        addLog(`🔊 TTS Google: ${text.length} chars → ${path.basename(outPath)}`);
         return outPath;
     } catch (e: any) {
         addLog(`❌ Google TTS erro: ${e.message}`);
@@ -123,9 +137,10 @@ export function estimateSpeechDuration(text: string): number {
 
 export class VoiceAgent implements Agent {
     name = 'VoiceAgent';
-    description = 'Transcreve áudios via Whisper e responde com voz usando Google TTS.';
+    description = 'Transcreve áudios via Whisper e responde com voz usando TTS.';
     keywords = ['falar', 'voz', 'áudio', 'audio', 'fala', 'diz', 'fale', 'responde em áudio', 'responder em audio', 'manda audio', 'manda áudio', 'conversar por voz'];
     category = 'media' as const;
+    priority = 8;
 
     canHandle(ctx: AgentContext): boolean {
         const l = ctx.userMessage.toLowerCase();
@@ -142,17 +157,13 @@ export class VoiceAgent implements Agent {
             return '🔊 Diga o que você quer que eu fale. Ex: `/voz Olá, mundo!`';
         }
 
-        // Se for o próprio VoiceAgent, gera TTS
-        if (this.canHandle(ctx) && !texto.startsWith('!')) {
-            const audioPath = await synthesizeSpeech(texto, 'pt-BR');
-            if (!audioPath) return '❌ Não consegui gerar o áudio agora. Tente novamente.';
-            return {
-                text: `🔊 _"${texto.substring(0, 80)}"_`,
-                audio: fs.readFileSync(audioPath),
-                file: { path: audioPath, type: 'voice' }
-            };
-        }
-
-        return null;
+        // Gera TTS
+        const audioPath = await synthesizeSpeech(texto, 'pt-BR');
+        if (!audioPath) return '❌ Não consegui gerar o áudio agora. Tente novamente.';
+        
+        return {
+            text: `🔊 _"${texto.substring(0, 80)}"_`,
+            file: { path: audioPath, type: 'voice' }
+        };
     }
 }
