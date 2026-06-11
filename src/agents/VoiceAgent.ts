@@ -57,20 +57,29 @@ export async function transcribeAudio(filePath: string): Promise<string> {
 }
 
 /** Sintetiza texto em MP3 via Google TTS */
-export async function synthesizeSpeech(text: string, lang = 'pt-BR'): Promise<string> {
+
+/** Sintetiza texto em MP3 via Replicate (Kokoro-82M ou similar) */
+export async function synthesizeSpeech(text: string): Promise<string> {
     try {
-        if (!text || text.length < 1) return '';
+        if (!text || !process.env.REPLICATE_API_TOKEN) return '';
+        const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
+        
+        // Usando um modelo de TTS de alta qualidade no Replicate
+        const output = await replicate.run(
+            "lucataco/kokoro-82m:dfdfc08348274bc84c1728f9906665046243cf20f8629f3f45230986e3926861",
+            { input: { text: text, speed: 1, voice: "af_heart" } }
+        ) as any;
 
-        // Google TTS limite de 200 caracteres por request — quebra em chunks
-        const maxLen = 200;
-        const chunks: string[] = [];
-        let restante = text;
+        const audioUrl = Array.isArray(output) ? output[0] : output;
+        const outPath = path.join(TMP_DIR, `tts_replicate_${Date.now()}.mp3`);
+        await downloadToFile(audioUrl, outPath);
+        return outPath;
+    } catch (e: any) {
+        addLog(`❌ Replicate TTS erro: ${e.message}`);
+        return '';
+    }
+}
 
-        while (restante.length > 0) {
-            if (restante.length <= maxLen) {
-                chunks.push(restante);
-                break;
-            }
             // Tenta quebrar em pontuação
             const trecho = restante.substring(0, maxLen);
             const ultimoPonto = Math.max(

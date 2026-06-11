@@ -162,6 +162,27 @@ async function executeSkillTags(tags: string[], ctx: Context, status: any): Prom
     return lastText;
 }
 
+
+    // --- Lógica de Intenção e Resposta Humana ---
+    const systemPrompt = `Você é o Conecta Claw🦞, um assistente brasileiro extremamente inteligente, prestativo e com personalidade humana. 
+    Sua missão é ajudar o usuário da melhor forma possível. 
+    Se o usuário pedir para gerar imagem, vídeo ou áudio, use as ferramentas disponíveis.
+    Mantenha um tom amigável, direto e natural. Não use robotismos.
+    Se o usuário enviar um áudio, responda de forma empática e também em áudio.`;
+
+    async function handleIntent(ctx: Context, text: string) {
+        const memory = getConversationMemory(ctx.from!.id);
+        const response = await groq.chat.completions.create({
+            model: "llama-3.3-70b-versatile",
+            messages: [
+                { role: "system", content: systemPrompt },
+                ...memory.messages,
+                { role: "user", content: text }
+            ]
+        });
+        return response.choices[0].message.content;
+    }
+
 // ── /start ──────────────────────────────────────────────────
 bot.start((ctx) => {
     ctx.reply(
@@ -625,3 +646,36 @@ console.log(`🎨 Replicate: ${replicate ? '✅' : '❌ (vídeo desabilitado)'}`
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+
+bot.on('voice', async (ctx) => {
+    const status = await createStatusUpdater(ctx, '🎤 Ouvindo áudio...');
+    try {
+        const fileId = (ctx.message as any).voice.file_id;
+        const oggPath = await getTelegramFile(ctx, fileId);
+        const text = await transcribeAudio(oggPath);
+        
+        if (!text) {
+            await status.update('❌ Não consegui entender o áudio.');
+            return;
+        }
+
+        await status.update(`📝 Transcrição: "${text}"\n\n🤔 Pensando na resposta...`);
+        const replyText = await handleIntent(ctx, text);
+        
+        await status.update('🔊 Gerando resposta em áudio...');
+        const audioPath = await synthesizeSpeech(replyText);
+        
+        if (audioPath) {
+            await ctx.replyWithVoice({ source: audioPath });
+            await ctx.reply(replyText);
+        } else {
+            await ctx.reply(replyText);
+        }
+    } catch (e: any) {
+        addLog(`❌ Erro no processamento de áudio: ${e.message}`);
+        await ctx.reply('Desculpe, tive um problema ao processar seu áudio.');
+    } finally {
+        await status.delete();
+    }
+});
