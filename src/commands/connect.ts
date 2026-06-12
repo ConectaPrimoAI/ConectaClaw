@@ -8,12 +8,8 @@ import jwt from 'jsonwebtoken';
 import { getAllIntegrations } from '../db/firebase.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
-const JWT_EXPIRY = '10m'; // 10 minutos
-const WEBAPP_URL = process.env.WEBAPP_URL || 'https://conectaclaw.onrender.com';
+const JWT_EXPIRY = '10m';
 
-/**
- * Gera JWT para o usuário com validade de 10 minutos
- */
 export function generateUserToken(telegramId: number): string {
   return jwt.sign(
     {
@@ -25,9 +21,6 @@ export function generateUserToken(telegramId: number): string {
   );
 }
 
-/**
- * Verifica e decodifica o JWT
- */
 export function verifyUserToken(token: string): { telegram_id: number } | null {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
@@ -37,20 +30,13 @@ export function verifyUserToken(token: string): { telegram_id: number } | null {
   }
 }
 
-/**
- * Handler do comando /conectar
- */
 export async function handleConectar(ctx: Context): Promise<void> {
   const telegramId = ctx.from!.id;
   const firstName = ctx.from!.first_name || 'amigo';
 
-  // Gera o token JWT
   const token = generateUserToken(telegramId);
-
-  // URL do painel de conectores
   const panelUrl = `https://conecta-primo-ai.vercel.app/conectores.html?token=${token}`;
 
-  // Verifica integrações já conectadas
   const integrations = await getAllIntegrations(telegramId);
   const connectedList = Object.keys(integrations);
 
@@ -58,7 +44,7 @@ export async function handleConectar(ctx: Context): Promise<void> {
   if (connectedList.length > 0) {
     const names = connectedList
       .filter((k) => k !== 'google')
-      .map((k) => `✅ ${capitalize(k)}`)
+      .map((k: string) => `✅ ${capitalize(k)}`)
       .join(', ');
     if (names) {
       statusText = `\n\n📊 *Conectados:* ${names}`;
@@ -91,9 +77,6 @@ export async function handleConectar(ctx: Context): Promise<void> {
   );
 }
 
-/**
- * Handler para /integracoes — mostra status das integrações
- */
 export async function handleIntegrationsStatus(ctx: Context): Promise<void> {
   const telegramId = ctx.from!.id;
   const integrations = await getAllIntegrations(telegramId);
@@ -117,20 +100,18 @@ export async function handleIntegrationsStatus(ctx: Context): Promise<void> {
   await ctx.reply(message, { parse_mode: 'Markdown' });
 }
 
-/**
- * Handler para /desconectar <serviço>
- */
 export async function handleDisconnect(ctx: Context): Promise<void> {
-  const text = (ctx.message as any)?.text || '';
+  const text = (ctx.message && 'text' in ctx.message) ? ctx.message.text : '';
   const parts = text.split(' ');
   const provider = parts[1]?.toLowerCase();
 
   if (!provider) {
-    return ctx.reply(
+    await ctx.reply(
       '⚠️ Use: `/desconectar <serviço>`\n\n' +
         'Serviços disponíveis: `gmail`, `drive`, `calendar`, `sheets`, `notion`, `github`',
       { parse_mode: 'Markdown' }
     );
+    return;
   }
 
   try {
