@@ -3,7 +3,7 @@
  * Comandos que usam integrações conectadas
  */
 
-import { Context, Message } from 'telegraf';
+import { Context } from 'telegraf';
 import { hasIntegration } from '../db/firebase.js';
 import * as google from '../integrations/google.js';
 import * as notion from '../integrations/notion.js';
