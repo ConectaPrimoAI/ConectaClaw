@@ -1,37 +1,39 @@
 {
-  "name": "conectaclaw-conectaclaw",
-  "version": "20.0.0",
-  "description": "ConectaClaw V20.0 - Agente Autônomo Telegram",
-  "main": "dist/index.js",
+  "name": "conectaclaw",
+  "version": "23.0.0",
+  "description": "ConectaClaw 🦞 — Bot Telegram com integrações OAuth2 (Gmail, Drive, Calendar, Sheets, Notion, GitHub)",
+  "main": "dist/conectaclaw-agent.js",
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "dev:build": "tsc && node dist/index.js"
+    "start": "node dist/conectaclaw-agent.js",
+    "dev": "tsx watch src/conectaclaw-agent.ts",
+    "webapp": "tsx src/webapp/server.ts"
   },
+  "keywords": ["telegram", "bot", "oauth2", "google", "notion", "github", "firebase"],
+  "author": "ConectaPrimoAI",
+  "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "axios": "^1.16.1",
-    "dotenv": "^16.6.1",
-    "express": "^4.22.2",
-    "form-data": "^4.0.1",
-    "google-tts-api": "^2.0.2",
-    "groq-sdk": "^0.37.0",
-    "node-cron": "^3.0.3",
-    "node-fetch": "^3.3.2",
-    "pptxgenjs": "^4.0.1",
-    "puppeteer": "^24.43.1",
-    "replicate": "^0.34.0",
     "telegraf": "^4.16.3",
-    "zod": "^4.4.3"
+    "groq-sdk": "^0.8.0",
+    "replicate": "^1.0.1",
+    "axios": "^1.7.9",
+    "express": "^4.21.1",
+    "cors": "^2.8.5",
+    "firebase-admin": "^13.0.1",
+    "googleapis": "^144.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.11.0",
-    "@types/node-cron": "^3.0.11",
-    "@types/node-fetch": "^2.6.12",
-    "tsx": "^4.19.0",
-    "typescript": "^5.3.3"
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
