@@ -1,35 +1,45 @@
 services:
   - type: web
     name: conectaclaw
-    env: node
-    buildCommand: pnpm install && pnpm build
-    startCommand: pnpm start
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
     envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WEBAPP_PORT
+        value: 3001
       - key: TELEGRAM_TOKEN
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: GOOGLE_ACCESS_TOKEN
+      - key: FIREBASE_PROJECT_ID
+        value: conectaclaw
+      - key: FIREBASE_CLIENT_EMAIL
+        value: firebase-adminsdk-fbsvc@conectaclaw.iam.gserviceaccount.com
+      - key: FIREBASE_PRIVATE_KEY
         sync: false
-      - key: GOOGLE_REFRESH_TOKEN
-        sync: false
+      - key: FIREBASE_DATABASE_URL
+        value: https://conectaclaw.firebaseio.com
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: GITHUB_TOKEN
+      - key: GOOGLE_REDIRECT_URI
+        value: https://conectaclaw.onrender.com/oauth/google/callback
+      - key: NOTION_CLIENT_ID
         sync: false
-      - key: GITHUB_USERNAME
+      - key: NOTION_CLIENT_SECRET
         sync: false
-      - key: REPLICATE_API_TOKEN
+      - key: NOTION_REDIRECT_URI
+        value: https://conectaclaw.onrender.com/oauth/notion/callback
+      - key: GITHUB_CLIENT_ID
         sync: false
-      - key: PORT
-        value: "10000"
-      - key: WEB_TERMINAL_PORT
-        value: "3000"
-      - key: PUPPETEER_SKIP_DOWNLOAD
-        value: "true"
-      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
-        value: "true"
-      - key: NODE_ENV
-        value: production
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_REDIRECT_URI
+        value: https://conectaclaw.onrender.com/oauth/github/callback
+      - key: JWT_SECRET
+        generateValue: true
+      - key: WEBAPP_URL
+        value: https://conectaclaw.onrender.com
