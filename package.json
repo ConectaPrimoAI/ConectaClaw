@@ -1,7 +1,7 @@
 {
   "name": "conectaclaw",
   "version": "23.0.0",
-  "description": "ConectaClaw 🦞 — Bot Telegram com integrações OAuth2 (Gmail, Drive, Calendar, Sheets, Notion, GitHub)",
+  "description": "ConectaClaw 🦞 — Bot Telegram com integrações OAuth2",
   "main": "dist/conectaclaw-agent.js",
   "type": "module",
   "scripts": {
@@ -10,9 +10,6 @@
     "dev": "tsx watch src/conectaclaw-agent.ts",
     "webapp": "tsx src/webapp/server.ts"
   },
-  "keywords": ["telegram", "bot", "oauth2", "google", "notion", "github", "firebase"],
-  "author": "ConectaPrimoAI",
-  "license": "MIT",
   "dependencies": {
     "telegraf": "^4.16.3",
     "groq-sdk": "^0.8.0",
@@ -23,7 +20,10 @@
     "firebase-admin": "^13.0.1",
     "googleapis": "^144.0.0",
     "jsonwebtoken": "^9.0.2",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "google-tts-api": "^2.0.2",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "puppeteer": "^23.10.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
