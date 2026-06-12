@@ -13,8 +13,6 @@ import {
 } from '../db/firebase.js';
 import { GOOGLE_SCOPES } from './types.js';
 
-// ── OAuth2 Client ──────────────────────────────────────────
-
 function createOAuth2Client() {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -23,9 +21,6 @@ function createOAuth2Client() {
   );
 }
 
-/**
- * Gera URL de autorização Google para os serviços selecionados
- */
 export function generateGoogleAuthUrl(
   services: string[],
   telegramId: number
@@ -40,7 +35,6 @@ export function generateGoogleAuthUrl(
     }
   }
 
-  // Se nenhum serviço específico, usa todos
   if (scopes.length === 0) {
     scopes.push(
       ...GOOGLE_SCOPES.gmail,
@@ -63,9 +57,6 @@ export function generateGoogleAuthUrl(
   });
 }
 
-/**
- * Decodifica o state do callback Google
- */
 export function resolveGoogleState(state: string): {
   telegram_id: number;
   services: string[];
@@ -74,9 +65,6 @@ export function resolveGoogleState(state: string): {
   return JSON.parse(Buffer.from(state, 'base64url').toString('utf-8'));
 }
 
-/**
- * Troca o código de autorização por tokens
- */
 export async function exchangeGoogleCode(code: string): Promise<{
   access_token: string;
   refresh_token?: string;
@@ -88,15 +76,12 @@ export async function exchangeGoogleCode(code: string): Promise<{
 
   return {
     access_token: tokens.access_token!,
-    refresh_token: tokens.refresh_token,
-    expiry_date: tokens.expiry_date,
-    scope: tokens.scope,
+    refresh_token: tokens.refresh_token ?? undefined,
+    expiry_date: tokens.expiry_date ?? undefined,
+    scope: tokens.scope ?? undefined,
   };
 }
 
-/**
- * Obtém um access token válido (com refresh automático)
- */
 export async function getValidAccessToken(
   telegramId: number,
   provider: string = 'google'
@@ -107,12 +92,10 @@ export async function getValidAccessToken(
     throw new Error(`Integração ${provider} não encontrada para o usuário ${telegramId}`);
   }
 
-  // Verifica se o token está expirado
   const now = Date.now();
   const isExpired = integration.tokenExpiry && integration.tokenExpiry <= now;
 
   if (isExpired && integration.refreshToken) {
-    // Refresh automático
     const oauth2Client = createOAuth2Client();
     oauth2Client.setCredentials({
       refresh_token: integration.refreshToken,
@@ -125,8 +108,8 @@ export async function getValidAccessToken(
         telegramId,
         provider,
         credentials.access_token!,
-        credentials.refresh_token || integration.refreshToken,
-        credentials.expiry_date
+        credentials.refresh_token ?? integration.refreshToken,
+        credentials.expiry_date ?? undefined
       );
 
       return credentials.access_token!;
@@ -138,9 +121,6 @@ export async function getValidAccessToken(
   return integration.accessToken;
 }
 
-/**
- * Salva a conexão Google no Firebase
- */
 export async function saveGoogleConnection(
   telegramId: number,
   tokens: {
@@ -162,7 +142,6 @@ export async function saveGoogleConnection(
     extra: { services },
   };
 
-  // Salva para cada serviço individualmente também
   for (const service of services) {
     await saveIntegration(telegramId, service, {
       ...data,
@@ -170,7 +149,6 @@ export async function saveGoogleConnection(
     });
   }
 
-  // E também uma entrada "google" geral
   await saveIntegration(telegramId, 'google', data);
 }
 
