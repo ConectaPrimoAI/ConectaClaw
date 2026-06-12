@@ -1,41 +1,48 @@
 /**
  * integrations-commands.ts
- * Comandos que usam integrações conectadas (ex: /email, /agenda, /repo)
+ * Comandos que usam integrações conectadas
  */
 
-import { Context } from 'telegraf';
+import { Context, Message } from 'telegraf';
 import { hasIntegration } from '../db/firebase.js';
 import * as google from '../integrations/google.js';
 import * as notion from '../integrations/notion.js';
 import * as github from '../integrations/github.js';
 
-/**
- * /email — envia e-mail via Gmail
- */
+function getMessageText(ctx: Context): string {
+  if (ctx.message && 'text' in ctx.message) {
+    return ctx.message.text;
+  }
+  return '';
+}
+
 export async function handleEmailCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from!.id;
 
   if (!(await hasIntegration(telegramId, 'gmail'))) {
-    return ctx.reply(
+    await ctx.reply(
       '⚠️ Você precisa conectar o Gmail primeiro!\nUse /conectar para conectar.'
     );
+    return;
   }
 
-  const text = ctx.message?.text?.replace(/^\/email\s*/i, '').trim() || '';
+  const text = getMessageText(ctx).replace(/^\/email\s*/i, '').trim();
 
   if (!text) {
-    return ctx.reply(
+    await ctx.reply(
       '📧 Uso: `/email destino@exemplo.com | Assunto | Corpo do e-mail`\n\n' +
         'Exemplo: `/email joao@email.com | Reunião | Vamos marcar uma reunião amanhã?`',
       { parse_mode: 'Markdown' }
     );
+    return;
   }
 
-  const parts = text.split('|').map((p) => p.trim());
+  const parts = text.split('|').map((p: string) => p.trim());
   if (parts.length < 3) {
-    return ctx.reply(
+    await ctx.reply(
       '⚠️ Formato: `destino | assunto | corpo`\nSepare cada parte com |'
     );
+    return;
   }
 
   const [to, subject, ...bodyParts] = parts;
@@ -52,16 +59,14 @@ export async function handleEmailCommand(ctx: Context): Promise<void> {
   }
 }
 
-/**
- * /emails — lê e-mails não lidos
- */
 export async function handleReadEmailsCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from!.id;
 
   if (!(await hasIntegration(telegramId, 'gmail'))) {
-    return ctx.reply(
+    await ctx.reply(
       '⚠️ Você precisa conectar o Gmail primeiro!\nUse /conectar para conectar.'
     );
+    return;
   }
 
   try {
@@ -69,7 +74,8 @@ export async function handleReadEmailsCommand(ctx: Context): Promise<void> {
     const emails = await google.readGmail(telegramId, 'is:unread', 5);
 
     if (emails.length === 0) {
-      return ctx.reply('📭 Nenhum e-mail não lido!');
+      await ctx.reply('📭 Nenhum e-mail não lido!');
+      return;
     }
 
     let message = `📬 *${emails.length} e-mail(s) não lido(s):*\n\n`;
@@ -85,16 +91,14 @@ export async function handleReadEmailsCommand(ctx: Context): Promise<void> {
   }
 }
 
-/**
- * /agenda — mostra próximos eventos
- */
 export async function handleAgendaCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from!.id;
 
   if (!(await hasIntegration(telegramId, 'calendar'))) {
-    return ctx.reply(
+    await ctx.reply(
       '⚠️ Você precisa conectar o Google Calendar primeiro!\nUse /conectar para conectar.'
     );
+    return;
   }
 
   try {
@@ -102,7 +106,8 @@ export async function handleAgendaCommand(ctx: Context): Promise<void> {
     const events = await google.listCalendarEvents(telegramId);
 
     if (events.length === 0) {
-      return ctx.reply('📭 Nenhum evento próximo na agenda!');
+      await ctx.reply('📭 Nenhum evento próximo na agenda!');
+      return;
     }
 
     let message = `📅 *Próximos eventos:*\n\n`;
@@ -121,16 +126,14 @@ export async function handleAgendaCommand(ctx: Context): Promise<void> {
   }
 }
 
-/**
- * /arquivos — lista arquivos do Drive
- */
 export async function handleArquivosCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from!.id;
 
   if (!(await hasIntegration(telegramId, 'drive'))) {
-    return ctx.reply(
+    await ctx.reply(
       '⚠️ Você precisa conectar o Google Drive primeiro!\nUse /conectar para conectar.'
     );
+    return;
   }
 
   try {
@@ -138,7 +141,8 @@ export async function handleArquivosCommand(ctx: Context): Promise<void> {
     const files = await google.listDriveFiles(telegramId);
 
     if (files.length === 0) {
-      return ctx.reply('📭 Nenhum arquivo encontrado!');
+      await ctx.reply('📭 Nenhum arquivo encontrado!');
+      return;
     }
 
     let message = `📁 *Seus arquivos recentes:*\n\n`;
@@ -157,16 +161,14 @@ export async function handleArquivosCommand(ctx: Context): Promise<void> {
   }
 }
 
-/**
- * /notion — lista páginas do Notion
- */
 export async function handleNotionCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from!.id;
 
   if (!(await hasIntegration(telegramId, 'notion'))) {
-    return ctx.reply(
+    await ctx.reply(
       '⚠️ Você precisa conectar o Notion primeiro!\nUse /conectar para conectar.'
     );
+    return;
   }
 
   try {
@@ -175,7 +177,8 @@ export async function handleNotionCommand(ctx: Context): Promise<void> {
 
     const pages = result.results || [];
     if (pages.length === 0) {
-      return ctx.reply('📭 Nenhuma página encontrada no Notion!');
+      await ctx.reply('📭 Nenhuma página encontrada no Notion!');
+      return;
     }
 
     let message = `📝 *Suas páginas do Notion:*\n\n`;
@@ -197,16 +200,14 @@ export async function handleNotionCommand(ctx: Context): Promise<void> {
   }
 }
 
-/**
- * /repo — lista repositórios do GitHub
- */
 export async function handleRepoCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from!.id;
 
   if (!(await hasIntegration(telegramId, 'github'))) {
-    return ctx.reply(
+    await ctx.reply(
       '⚠️ Você precisa conectar o GitHub primeiro!\nUse /conectar para conectar.'
     );
+    return;
   }
 
   try {
@@ -214,7 +215,8 @@ export async function handleRepoCommand(ctx: Context): Promise<void> {
     const repos = await github.listGitHubRepos(telegramId);
 
     if (repos.length === 0) {
-      return ctx.reply('📭 Nenhum repositório encontrado!');
+      await ctx.reply('📭 Nenhum repositório encontrado!');
+      return;
     }
 
     let message = `🐙 *Seus repositórios:*\n\n`;
@@ -233,25 +235,24 @@ export async function handleRepoCommand(ctx: Context): Promise<void> {
   }
 }
 
-/**
- * /issues — lista issues de um repo
- */
 export async function handleIssuesCommand(ctx: Context): Promise<void> {
   const telegramId = ctx.from!.id;
 
   if (!(await hasIntegration(telegramId, 'github'))) {
-    return ctx.reply(
+    await ctx.reply(
       '⚠️ Você precisa conectar o GitHub primeiro!\nUse /conectar para conectar.'
     );
+    return;
   }
 
-  const text = ctx.message?.text?.replace(/^\/issues\s*/i, '').trim() || '';
+  const text = getMessageText(ctx).replace(/^\/issues\s*/i, '').trim();
 
   if (!text || !text.includes('/')) {
-    return ctx.reply(
+    await ctx.reply(
       '🐙 Uso: `/issues owner/repo`\n\nExemplo: `/issues facebook/react`',
       { parse_mode: 'Markdown' }
     );
+    return;
   }
 
   const [owner, repo] = text.split('/');
@@ -261,7 +262,8 @@ export async function handleIssuesCommand(ctx: Context): Promise<void> {
     const issues = await github.listGitHubIssues(telegramId, owner, repo);
 
     if (issues.length === 0) {
-      return ctx.reply('📭 Nenhuma issue aberta!');
+      await ctx.reply('📭 Nenhuma issue aberta!');
+      return;
     }
 
     let message = `🐙 *Issues abertas em ${owner}/${repo}:*\n\n`;
@@ -275,8 +277,6 @@ export async function handleIssuesCommand(ctx: Context): Promise<void> {
     await ctx.reply(`❌ Erro: ${error.message}`);
   }
 }
-
-// ── Helpers ────────────────────────────────────────────────
 
 function getFileIcon(mimeType: string): string {
   if (mimeType?.includes('folder')) return '📁';
