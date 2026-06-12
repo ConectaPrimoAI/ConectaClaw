@@ -3,7 +3,7 @@
  * Servidor Express para OAuth callbacks e API do painel web
  */
 
-import express from 'express';
+import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -32,49 +32,50 @@ import { verifyUserToken, JWT_SECRET } from '../commands/connect.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+const app: Express = express();
 const PORT = parseInt(process.env.WEBAPP_PORT || '3001');
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Serve arquivos estáticos
 app.use(express.static(path.join(__dirname, '..', '..', 'public')));
 
 // ── Health check ───────────────────────────────────────────
-app.get('/health', (_req, res) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'ConectaClaw', timestamp: Date.now() });
 });
 
 // ── Verifica token JWT ─────────────────────────────────────
-app.get('/api/verify', (req, res) => {
+app.get('/api/verify', (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
   const token = req.query.token as string;
 
   const tokenToVerify = authHeader?.replace('Bearer ', '') || token;
 
   if (!tokenToVerify) {
-    return res.status(401).json({ error: 'Token não fornecido' });
+    res.status(401).json({ error: 'Token não fornecido' });
+    return;
   }
 
   const decoded = verifyUserToken(tokenToVerify);
   if (!decoded) {
-    return res.status(401).json({ error: 'Token inválido ou expirado' });
+    res.status(401).json({ error: 'Token inválido ou expirado' });
+    return;
   }
 
   res.json({ valid: true, telegram_id: decoded.telegram_id });
 });
 
 // ── Status das integrações ─────────────────────────────────
-app.get('/api/connections', async (req, res) => {
+app.get('/api/connections', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
   const token = req.query.token as string;
   const tokenToVerify = authHeader?.replace('Bearer ', '') || token;
 
   const decoded = verifyUserToken(tokenToVerify || '');
   if (!decoded) {
-    return res.status(401).json({ error: 'Token inválido' });
+    res.status(401).json({ error: 'Token inválido' });
+    return;
   }
 
   try {
@@ -101,12 +102,13 @@ app.get('/api/connections', async (req, res) => {
 });
 
 // ── Gerar URL de auth Google ───────────────────────────────
-app.post('/api/auth/google/url', async (req, res) => {
+app.post('/api/auth/google/url', async (req: Request, res: Response) => {
   const { token, services } = req.body;
 
   const decoded = verifyUserToken(token || '');
   if (!decoded) {
-    return res.status(401).json({ error: 'Token inválido' });
+    res.status(401).json({ error: 'Token inválido' });
+    return;
   }
 
   try {
@@ -118,17 +120,19 @@ app.post('/api/auth/google/url', async (req, res) => {
 });
 
 // ── Callback OAuth Google ──────────────────────────────────
-app.get('/oauth/google/callback', async (req, res) => {
+app.get('/oauth/google/callback', async (req: Request, res: Response) => {
   const { code, state, error } = req.query;
 
   if (error) {
-    return res.redirect(
+    res.redirect(
       `https://conecta-primo-ai.vercel.app/conectores.html?error=${encodeURIComponent(String(error))}&provider=google`
     );
+    return;
   }
 
   if (!code || !state) {
-    return res.status(400).send('Código ou state ausente');
+    res.status(400).send('Código ou state ausente');
+    return;
   }
 
   try {
@@ -137,7 +141,6 @@ app.get('/oauth/google/callback', async (req, res) => {
 
     await saveGoogleConnection(stateData.telegram_id, tokens, stateData.services);
 
-    // Notifica via Telegram (se possível)
     notifyTelegram(stateData.telegram_id, stateData.services);
 
     res.redirect(
@@ -152,12 +155,13 @@ app.get('/oauth/google/callback', async (req, res) => {
 });
 
 // ── Gerar URL de auth Notion ───────────────────────────────
-app.post('/api/auth/notion/url', async (req, res) => {
+app.post('/api/auth/notion/url', async (req: Request, res: Response) => {
   const { token } = req.body;
 
   const decoded = verifyUserToken(token || '');
   if (!decoded) {
-    return res.status(401).json({ error: 'Token inválido' });
+    res.status(401).json({ error: 'Token inválido' });
+    return;
   }
 
   try {
@@ -169,17 +173,19 @@ app.post('/api/auth/notion/url', async (req, res) => {
 });
 
 // ── Callback OAuth Notion ──────────────────────────────────
-app.get('/oauth/notion/callback', async (req, res) => {
+app.get('/oauth/notion/callback', async (req: Request, res: Response) => {
   const { code, state, error } = req.query;
 
   if (error) {
-    return res.redirect(
+    res.redirect(
       `https://conecta-primo-ai.vercel.app/conectores.html?error=${encodeURIComponent(String(error))}&provider=notion`
     );
+    return;
   }
 
   if (!code || !state) {
-    return res.status(400).send('Código ou state ausente');
+    res.status(400).send('Código ou state ausente');
+    return;
   }
 
   try {
@@ -202,12 +208,13 @@ app.get('/oauth/notion/callback', async (req, res) => {
 });
 
 // ── Gerar URL de auth GitHub ───────────────────────────────
-app.post('/api/auth/github/url', async (req, res) => {
+app.post('/api/auth/github/url', async (req: Request, res: Response) => {
   const { token, scopes } = req.body;
 
   const decoded = verifyUserToken(token || '');
   if (!decoded) {
-    return res.status(401).json({ error: 'Token inválido' });
+    res.status(401).json({ error: 'Token inválido' });
+    return;
   }
 
   try {
@@ -219,17 +226,19 @@ app.post('/api/auth/github/url', async (req, res) => {
 });
 
 // ── Callback OAuth GitHub ──────────────────────────────────
-app.get('/oauth/github/callback', async (req, res) => {
+app.get('/oauth/github/callback', async (req: Request, res: Response) => {
   const { code, state, error } = req.query;
 
   if (error) {
-    return res.redirect(
+    res.redirect(
       `https://conecta-primo-ai.vercel.app/conectores.html?error=${encodeURIComponent(String(error))}&provider=github`
     );
+    return;
   }
 
   if (!code || !state) {
-    return res.status(400).send('Código ou state ausente');
+    res.status(400).send('Código ou state ausente');
+    return;
   }
 
   try {
@@ -252,12 +261,13 @@ app.get('/oauth/github/callback', async (req, res) => {
 });
 
 // ── Desconectar integração ─────────────────────────────────
-app.post('/api/disconnect', async (req, res) => {
+app.post('/api/disconnect', async (req: Request, res: Response) => {
   const { token, provider } = req.body;
 
   const decoded = verifyUserToken(token || '');
   if (!decoded) {
-    return res.status(401).json({ error: 'Token inválido' });
+    res.status(401).json({ error: 'Token inválido' });
+    return;
   }
 
   try {
@@ -312,12 +322,11 @@ function getCommandHint(service: string): string {
 }
 
 // ── Inicia servidor ────────────────────────────────────────
-export function startWebApp() {
+export function startWebApp(): void {
   app.listen(PORT, () => {
     console.log(`🌐 WebApp rodando na porta ${PORT}`);
     console.log(`   Health: http://localhost:${PORT}/health`);
   });
-  return app;
 }
 
 export { app };
