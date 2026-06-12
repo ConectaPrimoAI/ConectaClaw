@@ -17,6 +17,34 @@ import { registry as skillRegistry } from './skills/index.js';
 import { transcribeAudio, synthesizeSpeech } from './agents/VoiceAgent.js';
 import { analyzeImage } from './agents/VisionAgent.js';
 
+// Adicionar no topo do arquivo, após os imports existentes
+import { startWebApp } from './webapp/server.js';
+import { handleConectar, handleIntegrationsStatus, handleDisconnect } from './commands/connect.js';
+import { 
+  handleEmailCommand, 
+  handleReadEmailsCommand, 
+  handleAgendaCommand, 
+  handleArquivosCommand, 
+  handleNotionCommand, 
+  handleRepoCommand, 
+  handleIssuesCommand 
+} from './commands/integrations-commands.js';
+
+// Iniciar WebApp (OAuth callbacks)
+startWebApp();
+
+// Registrar comandos de integração (adicionar após bot.command existentes)
+bot.command('conectar', handleConectar);
+bot.command('integracoes', handleIntegrationsStatus);
+bot.command('desconectar', handleDisconnect);
+bot.command('email', handleEmailCommand);
+bot.command('emails', handleReadEmailsCommand);
+bot.command('agenda', handleAgendaCommand);
+bot.command('arquivos', handleArquivosCommand);
+bot.command('notion', handleNotionCommand);
+bot.command('repo', handleRepoCommand);
+bot.command('issues', handleIssuesCommand);
+
 // ── Validação ───────────────────────────────────────────────
 if (!process.env.TELEGRAM_TOKEN || !process.env.GROQ_API_KEY) {
     console.error('❌ TELEGRAM_TOKEN ou GROQ_API_KEY não configurados.');
