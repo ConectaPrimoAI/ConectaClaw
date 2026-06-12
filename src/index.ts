@@ -1,5 +1,6 @@
 /**
  * index.ts
- * Ponto de entrada do ConectaClaw
+ * Entry point do ConectaClaw
  */
+
 import './conectaclaw-agent.js';
