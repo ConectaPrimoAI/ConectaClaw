@@ -3,7 +3,7 @@
  * Conexão com Firebase Admin SDK (Firestore) + CRUD de integrações
  */
 
-import * as admin from 'firebase-admin';
+import admin from 'firebase-admin';
 
 // Inicializa Firebase Admin
 if (!admin.apps.length) {
