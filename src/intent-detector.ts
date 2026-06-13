@@ -108,16 +108,13 @@ export async function detectIntent(userId: number, userMessage: string): Promise
       messages: [
         {
           role: 'system',
-          content: `Você é um assistente que detecta intenções do usuário para executar ações.
-Analise a mensagem e determine se o usuário quer executar alguma ação específica.
-Se a mensagem indicar uma ação clara (enviar email, ver agenda, listar arquivos, etc), retorne a função apropriada.
-Se for apenas uma conversa geral, retorne null.`
+          content: `Você é um roteador de intenções. Analise a mensagem do usuário e, SE ela expressar claramente a vontade de executar uma das ações disponíveis, chame a função correspondente usando o mecanismo de tool calling. Caso seja conversa geral, dúvida, ou a intenção não esteja clara, NÃO chame nenhuma função (retorne apenas texto vazio). Ações disponíveis: send_email, read_emails, list_calendar_events, list_drive_files, search_notion, list_github_repos.`
         },
         { role: 'user', content: userMessage }
       ],
       tools: tools as any,
       tool_choice: 'auto',
-      temperature: 0.3
+      temperature: 0.1
     });
 
     const responseMessage = completion.choices[0].message;

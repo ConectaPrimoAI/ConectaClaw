@@ -4,7 +4,6 @@
  */
 
 import { Context } from 'telegraf';
-import { Markup } from 'telegraf';
 import jwt from 'jsonwebtoken';
 import { getAllIntegrations } from '../db/firebase.js';
 
@@ -85,14 +84,32 @@ export async function handleConectar(ctx: Context): Promise<void> {
       `🔒 *Seguro:* Seus tokens ficam criptografados e você pode desconectar quando quiser.\n` +
       `⏰ *Validade:* 2 horas${statusText}`;
 
-    // ✅ Usa Markup do Telegraf corretamente (array de arrays para linhas separadas)
-    await ctx.reply(
-      message,
-      Markup.inlineKeyboard([
-        [Markup.button.webApp('🔌 Abrir Painel de Conectores', panelUrl)],
-        [Markup.button.url('🔗 Abrir no navegador', panelUrl)]
-      ])
-    );
+    // ✅ Em Telegraf v4+, `Markup.inlineKeyboard` foi removido.
+    // Construimos o inline_keyboard manualmente para maxima compatibilidade.
+    const inlineKeyboard = {
+      reply_markup: JSON.stringify({
+        inline_keyboard: [
+          [{ text: '🔌 Abrir Painel de Conectores', web_app: { url: panelUrl } }],
+          [{ text: '🔗 Abrir no navegador', url: panelUrl }]
+        ]
+      })
+    };
+
+    try {
+      await ctx.reply(message, { parse_mode: 'Markdown', ...inlineKeyboard } as any);
+    } catch (e: any) {
+      // Fallback: se o Telegram recusar web_app (alguns bots antigos), envia s� o link normal.
+      console.warn('[conectar] fallback sem web_app:', e.message);
+      await ctx.reply(
+        `${message}\n\n👉 ${panelUrl}`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: JSON.stringify({
+            inline_keyboard: [[{ text: '🔌 Abrir Painel de Conectores', url: panelUrl }]]
+          })
+        } as any
+      );
+    }
   } catch (error: any) {
     console.error('❌ Erro CRÍTICO no handleConectar:', error);
     throw error;

@@ -63,13 +63,20 @@ export const PERMISSION_SCOPES: Record<string, Record<string, { scope: string; l
 export function getPermissionScopes(provider: string, selectedPermissions: string[]): string[] {
   const providerScopes = PERMISSION_SCOPES[provider];
   if (!providerScopes) return [];
-  
+
   const scopes = new Set<string>();
   selectedPermissions.forEach(perm => {
     const scopeData = providerScopes[perm];
     if (scopeData) scopes.add(scopeData.scope);
   });
-  
+
+  // Notion: a granularidade da UI e apenas cosmica, pois o OAuth do Notion
+  // nao aceita scopes na URL. Filtramos para nao mandar valores invalidos
+  // que fariam a API do Notion retornar erro de "invalid scopes".
+  if (provider === 'notion') {
+    return [];
+  }
+
   return Array.from(scopes);
 }
 

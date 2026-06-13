@@ -18,11 +18,21 @@ const NOTION_VERSION = '2022-06-28';
 
 /**
  * Gera URL de autorizacao Notion
+ *
+ * IMPORTANTE: O OAuth do Notion NAO aceita escopos granulares na URL de autorizacao.
+ * Os escopos granulares (pages:read, databases:query etc.) sao definidos DENTRO
+ * da pagina da integracao no Notion (https://www.notion.so/profile/integrations).
+ * A URL de authorize so aceita o parametro "scopes" com a lista de capabilities
+ * que o seu internal integration ja possui — e o Notion ignora silenciosamente
+ * valores invalidos, o que fazia o handshake falhar antes.
+ *
+ * Por isso ignoramos `oauthScopes` aqui e deixamos a UI granular funcionar apenas
+ * como UX (a permissao REAL e definida no painel do Notion).
  */
-export function generateNotionAuthUrl(telegramId: number, oauthScopes?: string[]): string {
+export function generateNotionAuthUrl(telegramId: number, _oauthScopes?: string[]): string {
   const state = Buffer.from(
-    JSON.stringify({ 
-      telegram_id: telegramId, 
+    JSON.stringify({
+      telegram_id: telegramId,
       ts: Date.now(),
       salt: process.env.JWT_SECRET?.substring(0, 8) || 'claw'
     })
@@ -35,11 +45,6 @@ export function generateNotionAuthUrl(telegramId: number, oauthScopes?: string[]
     owner: 'user',
     state,
   });
-
-  // Se escopos foram fornecidos, adiciona-os aos parametros
-  if (oauthScopes && oauthScopes.length > 0) {
-    params.append('scopes', oauthScopes.join(','));
-  }
 
   return `https://api.notion.com/v1/oauth/authorize?${params.toString()}`;
 }

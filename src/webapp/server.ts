@@ -27,8 +27,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app: Express = express();
-// No Render, PORT é a porta pública.
-const PORT = parseInt(process.env.PORT || process.env.WEBAPP_PORT || '3001');
+// No Render (e em qualquer PaaS), PORT e a porta publica que o proxy reverso
+// do provider roteia para o app. Se escutarmos outra porta (ex.: WEBAPP_PORT=3001),
+// o trafego externo NAO chega ate la e os callbacks OAuth quebram com timeout.
+// Por isso priorizamos PORT (definida automaticamente pelo Render) e s� caimos
+// para WEBAPP_PORT/3001 em ambiente local de desenvolvimento.
+const PORT = parseInt(process.env.PORT || process.env.WEBAPP_PORT || '3001', 10);
+if (process.env.PORT && process.env.WEBAPP_PORT && process.env.PORT !== process.env.WEBAPP_PORT) {
+  console.warn(`[boot] PORT=${process.env.PORT} difere de WEBAPP_PORT=${process.env.WEBAPP_PORT}. Usando PORT para o listen publico.`);
+}
 
 app.use(cors());
 app.use(express.json());
@@ -102,16 +109,28 @@ app.get('/api/connections', async (req: Request, res: Response) => {
     const integrations = await getAllIntegrations(decoded.telegram_id);
     const status: Record<string, { connected: boolean; connectedAt?: number; scope?: string }> = {};
     const providers = ['gmail', 'drive', 'calendar', 'sheets', 'notion', 'github'];
-    
+
     for (const p of providers) {
-      status[p] = integrations[p] 
+      status[p] = integrations[p]
         ? { connected: true, connectedAt: integrations[p].connectedAt, scope: integrations[p].scope }
         : { connected: false };
     }
     res.json({ telegram_id: decoded.telegram_id, integrations: status });
   } catch (error: any) {
     console.error(`❌ [API] Erro ao buscar conexões para ${decoded.telegram_id}:`, error);
-    res.status(500).json({ error: `Falha ao carregar conexões: ${error.message}` });
+
+    // Traduz o erro "PERMISSION_DENIED / Cloud Firestore API has not been used"
+    // em uma mensagem que o painel sabe mostrar e que indica o que fazer.
+    const raw = String(error?.message || error);
+    let friendly = `Falha ao carregar conexões: ${raw}`;
+    if (/PERMISSION_DENIED/i.test(raw) || /Cloud Firestore API has not been used/i.test(raw)) {
+      friendly = 'O Cloud Firestore não está habilitado (ou a Service Account não tem acesso) no projeto Firebase. Acesse console.firebase.google.com → seu projeto → Firestore Database → "Criar banco de dados" e habilite a API Cloud Firestore no Google Cloud Console do mesmo projeto.';
+    } else if (/Could not load the default credentials/i.test(raw)) {
+      friendly = 'Credenciais do Firebase Admin não encontradas. Configure FIREBASE_SERVICE_ACCOUNT (JSON completo) ou FIREBASE_PRIVATE_KEY + FIREBASE_CLIENT_EMAIL + FIREBASE_PROJECT_ID no Render.';
+    } else if (/private key/i.test(raw)) {
+      friendly = 'A FIREBASE_PRIVATE_KEY está mal formatada. Ela precisa conter \\n nas quebras de linha e estar entre aspas duplas no .env do Render.';
+    }
+    res.status(500).json({ error: friendly, raw });
   }
 });
 
@@ -152,8 +171,20 @@ app.post('/api/auth/:provider/url', async (req, res, next) => {
 app.get('/oauth/google/callback', async (req: Request, res: Response) => {
   const { code, state, error } = req.query;
   const baseUrl = `${req.protocol}://${req.get('host')}`;
-  
-  if (error) return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(String(error))}&provider=google`);
+
+  if (error) {
+    const errStr = String(error);
+    let friendly = `Falha na conexão com Google: ${errStr}`;
+    // Erros mais comuns do OAuth do Google e o que o usuário precisa fazer.
+    if (errStr === 'access_denied') {
+      friendly = 'Você cancelou a autorização do Google. Tente novamente e clique em "Permitir" na tela do Google.';
+    } else if (errStr === 'invalid_request' || errStr.includes('invalid_client')) {
+      friendly = 'Configuração OAuth do Google inválida. Verifique GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_REDIRECT_URI nas variáveis de ambiente do Render.';
+    } else if (errStr.includes('unauthorized_client')) {
+      friendly = 'O app Google não está autorizado para este redirect_uri. Adicione https://conectaclaw.onrender.com/oauth/google/callback em "Authorized redirect URIs" no Google Cloud Console.';
+    }
+    return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(friendly)}&provider=google`);
+  }
   if (!code || !state) {
     console.error('❌ [Google OAuth] Código ou state ausente:', { code: !!code, state: !!state });
     return res.status(400).send('Erro: Código de autorização ou estado de segurança ausente.');
@@ -163,13 +194,13 @@ app.get('/oauth/google/callback', async (req: Request, res: Response) => {
     console.log('🔄 [Google OAuth] Iniciando troca de código...');
     const stateData = resolveGoogleState(String(state));
     console.log(`👤 [Google OAuth] Usuário: ${stateData.telegram_id}, Serviços: ${stateData.services.join(', ')}`);
-    
+
     const tokens = await exchangeGoogleCode(String(code));
     console.log('✅ [Google OAuth] Tokens obtidos com sucesso');
-    
+
     await saveGoogleConnection(stateData.telegram_id, tokens, stateData.services);
     notifyTelegram(stateData.telegram_id, stateData.services);
-    
+
     res.redirect(`${baseUrl}/conectores.html?success=true&provider=google&services=${stateData.services.join(',')}`);
   } catch (error: any) {
     const errorMsg = error.response?.data?.error_description || error.message;
@@ -178,7 +209,17 @@ app.get('/oauth/google/callback', async (req: Request, res: Response) => {
       details: error.response?.data,
       stack: error.stack
     });
-    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(`Falha na conexão com Google: ${errorMsg}`)}&provider=google`);
+
+    let friendly = `Falha na conexão com Google: ${errorMsg}`;
+    const status = error.response?.status;
+    if (status === 400 && /redirect_uri_mismatch/i.test(errorMsg)) {
+      friendly = 'redirect_uri_mismatch: o redirect_uri enviado não bate com o cadastrado no Google Cloud. Atualize GOOGLE_REDIRECT_URI para https://conectaclaw.onrender.com/oauth/google/callback e cadastre o mesmo valor em "Authorized redirect URIs".';
+    } else if (status === 403) {
+      friendly = 'Google bloqueou a requisição (403). Causas mais prováveis: (1) seu e-mail não está adicionado como Test User no OAuth Consent Screen do projeto conectaclaw-oauth; (2) a Cloud Firestore / Google+ API está desabilitada. Acesse console.cloud.google.com e revise.';
+    } else if (/access_denied/i.test(errorMsg)) {
+      friendly = 'Acesso negado pelo Google. Se o seu e-mail não foi adicionado como test user, o Google bloqueia a tela com "Acesso bloqueado: o app não concluiu o processo de verificação". Adicione-o em OAuth Consent Screen → Test users.';
+    }
+    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(friendly)}&provider=google`);
   }
 });
 

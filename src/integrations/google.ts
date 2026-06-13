@@ -13,6 +13,30 @@ import {
 } from '../db/firebase.js';
 import { GOOGLE_SCOPES } from './types.js';
 
+/**
+ * Conjunto de escopos "sensíveis" que disparam o aviso de
+ * "app nao verificado pelo Google" ate que o app passe pelo
+ * processo de OAuth verification do Google Cloud Console.
+ *
+ * Enquanto o app esta em modo "Testing", esses escopos
+ * exigem que o usuario esteja na lista de test users do projeto
+ * (Google Cloud -> APIs & Services -> OAuth consent screen -> Test users).
+ * Se o usuario nao estiver, recebe a tela "Acesso bloqueado: o app
+ * nao concluiu o processo de verificacao do Google".
+ *
+ * Para minimizar esse problema no fluxo "padrao", separamos os
+ * escopos em "safe" (nao exigem verificacao) e "sensitive" (exigem).
+ */
+const SENSITIVE_SCOPES = new Set<string>([
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.full',
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/spreadsheets',
+]);
+
 function createOAuth2Client() {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -52,11 +76,26 @@ export function generateGoogleAuthUrl(
     }
   }
 
+  // Garante que o scope basico de identidade esteja sempre presente
+  if (!scopes.includes('openid') && !scopes.includes('https://www.googleapis.com/auth/userinfo.email')) {
+    scopes.unshift('openid', 'https://www.googleapis.com/auth/userinfo.email');
+  }
+
+  // Loga quais escopos sensiveis estao sendo pedidos (ajuda a diagnosticar
+  // o erro "Acesso bloqueado: o app nao concluiu o processo de verificacao").
+  const hasSensitive = scopes.some(s => SENSITIVE_SCOPES.has(s));
+  if (hasSensitive) {
+    console.warn(
+      `[google] ⚠️ Pedindo escopos sensíveis que exigem app verificado ou test user: ` +
+      scopes.filter(s => SENSITIVE_SCOPES.has(s)).join(', ')
+    );
+  }
+
   // Adicionando um salt basico para evitar manipulacao simples do state
   const state = Buffer.from(
-    JSON.stringify({ 
-      telegram_id: telegramId, 
-      services, 
+    JSON.stringify({
+      telegram_id: telegramId,
+      services,
       ts: Date.now(),
       salt: process.env.JWT_SECRET?.substring(0, 8) || 'claw'
     })

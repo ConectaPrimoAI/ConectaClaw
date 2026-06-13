@@ -111,17 +111,22 @@ export async function saveIntegration(
     const userDoc = await userRef.get();
     const now = Date.now();
 
+    // Le o documento atual para preservar integrations de outros providers.
+    // Sem isso, usar set com merge: true em um documento INEXISTENTE pode
+    // gerar conflito em algumas combinacoes de regras do Firestore.
+    const current = userDoc.exists ? (userDoc.data() as UserConnections) : null;
+    const currentIntegrations = current?.integrations || {};
+    const mergedIntegrations = { ...currentIntegrations, [provider]: data };
+
     // ✅ Usamos set com merge: true para garantir que o documento exista e atualizar apenas o campo necessário.
     // Isso resolve erros de "Missing or insufficient permissions" quando as regras do Firestore
     // exigem que o documento exista ou quando há conflitos de escrita.
     await userRef.set({
       telegram_id: telegramId,
-      integrations: {
-        [provider]: data
-      },
+      integrations: mergedIntegrations,
       updatedAt: now,
       // Se não existir, define createdAt. Se existir, mantém o valor atual.
-      createdAt: userDoc.exists ? userDoc.data()?.createdAt || now : now
+      createdAt: current?.createdAt || now
     }, { merge: true });
   } catch (error: any) {
     console.error(`❌ Erro ao salvar integração ${provider}:`, error.message);

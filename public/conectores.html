@@ -1006,7 +1006,11 @@
 
       const success = params.get('success'), error = params.get('error'), provider = params.get('provider');
       if (success === 'true' && provider) { showBanner('success', `Integração com o ${capitalize(provider)} estabelecida com sucesso.`); window.history.replaceState({}, '', PANEL_URL); }
-      if (error) { showBanner('error', `Falha na sincronização: ${decodeURIComponent(error)}`); window.history.replaceState({}, '', PANEL_URL); }
+      if (error) {
+        const decoded = decodeURIComponent(error);
+        showBanner('error', decoded.startsWith('Falha') || decoded.startsWith('Acesso') || decoded.startsWith('O ') || decoded.startsWith('Credenciais') || decoded.startsWith('Config') || decoded.startsWith('Você') || decoded.startsWith('redirect') ? decoded : `Falha na sincronização: ${decoded}`);
+        window.history.replaceState({}, '', PANEL_URL);
+      }
 
       if (!userToken) { showTokenExpired("Token ausente. Solicite uma chave de acesso dinâmica no Telegram."); return; }
 
