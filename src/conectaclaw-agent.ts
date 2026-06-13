@@ -392,7 +392,9 @@ bot.on('audio', async (ctx) => {
     await handleAudioMessage(ctx, ctx.message.audio.file_id, ctx.message.audio.mime_type || 'audio/mpeg');
 });
 
-// ── Handler de TEXTO (rota via intenção) ────────────────────
+// ── Handler de TEXTO (inteligente com detecção de intenção) ─
+import { detectIntent, executeIntent } from './intent-detector.js';
+
 bot.on('text', async (ctx) => {
     const userId = ctx.from?.id;
     if (!userId) return;
@@ -402,9 +404,22 @@ bot.on('text', async (ctx) => {
     if (userMessage.startsWith('/')) return;
 
     try {
-        // Enviar ação de digitação imediatamente
         await ctx.sendChatAction('typing');
         
+        // 1. Tentar detectar intenção
+        const intent = await detectIntent(userId, userMessage);
+        
+        if (intent) {
+            // Tem intenção → executar ação
+            console.log(`🎯 Intenção detectada: ${intent.intent}`, intent.params);
+            const result = await executeIntent(ctx, intent);
+            
+            try { await ctx.reply(result, { parse_mode: 'Markdown' }); }
+            catch { await ctx.reply(result); }
+            return;
+        }
+        
+        // 2. Sem intenção → conversa normal com IA
         const reply = await handleIntent(ctx, userMessage);
         
         try { await ctx.reply(reply, { parse_mode: 'Markdown' }); }
@@ -412,14 +427,7 @@ bot.on('text', async (ctx) => {
 
     } catch (e: any) {
         addLog(`❌ text handler: ${e.message?.substring(0, 200)}`);
-        const code = e?.status ?? e?.response?.status;
-        if (code === 429) ctx.reply('⏱️ Muitas mensagens. Espera uns segundos!').catch(() => {});
-        else if (code === 503) ctx.reply('🔧 Modelo sobrecarregado. Tenta de novo.').catch(() => {});
-        else if (code === 400) {
-            ctx.reply('⚠️ Mensagem deu problema. Reformula!').catch(() => {});
-            conversationMemory.delete(userId);
-        }
-        else ctx.reply('❌ Erro ao processar sua mensagem.').catch(() => {});
+        ctx.reply('❌ Erro ao processar sua mensagem.').catch(() => {});
     }
 });
 
