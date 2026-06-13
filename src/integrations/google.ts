@@ -44,8 +44,14 @@ export function generateGoogleAuthUrl(
     );
   }
 
+  // Adicionando um salt básico para evitar manipulação simples do state
   const state = Buffer.from(
-    JSON.stringify({ telegram_id: telegramId, services, ts: Date.now() })
+    JSON.stringify({ 
+      telegram_id: telegramId, 
+      services, 
+      ts: Date.now(),
+      salt: process.env.JWT_SECRET?.substring(0, 8) || 'claw'
+    })
   ).toString('base64url');
 
   return oauth2Client.generateAuthUrl({
@@ -71,15 +77,24 @@ export async function exchangeGoogleCode(code: string): Promise<{
   expiry_date?: number;
   scope?: string;
 }> {
-  const oauth2Client = createOAuth2Client();
-  const { tokens } = await oauth2Client.getToken(code);
+  try {
+    const oauth2Client = createOAuth2Client();
+    const { tokens } = await oauth2Client.getToken(code);
 
-  return {
-    access_token: tokens.access_token!,
-    refresh_token: tokens.refresh_token ?? undefined,
-    expiry_date: tokens.expiry_date ?? undefined,
-    scope: tokens.scope ?? undefined,
-  };
+    if (!tokens.access_token) {
+      throw new Error('Google não retornou um access_token válido.');
+    }
+
+    return {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token ?? undefined,
+      expiry_date: tokens.expiry_date ?? undefined,
+      scope: tokens.scope ?? undefined,
+    };
+  } catch (error: any) {
+    console.error('❌ [Google OAuth] Erro na troca de código:', error.response?.data || error.message);
+    throw error;
+  }
 }
 
 export async function getValidAccessToken(

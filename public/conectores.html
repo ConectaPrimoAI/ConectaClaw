@@ -85,7 +85,7 @@
     <div id="banner" class="banner"></div>
     <div id="tokenExpired" class="token-expired" style="display:none;">
       <h2>⏰ Link expirado ou inválido</h2>
-      <p>Seu link de conexão expirou por segurança (validade de 30 min). Volte ao Telegram e use <code>/conectar</code> novamente.</p>
+      <p id="tokenExpiredMsg">Seu link de conexão expirou por segurança (validade de 2h). Volte ao Telegram e use <code>/conectar</code> novamente.</p>
       <button class="btn btn-connect" style="max-width: 200px; margin: 20px auto 0; display: block;" onclick="window.close()">Fechar</button>
     </div>
     <div id="connectorsGrid" class="connectors-grid"></div>
@@ -175,18 +175,17 @@
       if (success === 'true' && provider) { showBanner('success', `✅ ${capitalize(provider)} conectado com sucesso!`); window.history.replaceState({}, '', PANEL_URL); }
       if (error) { showBanner('error', `❌ Erro: ${decodeURIComponent(error)}`); window.history.replaceState({}, '', PANEL_URL); }
 
-      if (!userToken) { document.getElementById('connectorsGrid').style.display = 'none'; document.getElementById('tokenExpired').style.display = 'block'; return; }
+      if (!userToken) { showTokenExpired("Token de acesso não fornecido. Use /conectar no Telegram."); return; }
 
       try {
         const res = await fetch(`${API_BASE_URL}/api/verify?token=${encodeURIComponent(userToken)}`);
         const data = await res.json();
-        if (!data.valid) { document.getElementById('connectorsGrid').style.display = 'none'; document.getElementById('tokenExpired').style.display = 'block'; return; }
+        if (!data.valid) { showTokenExpired(data.error || "Seu link de conexão expirou por segurança (validade de 2h)."); return; }
         telegramId = data.telegram_id;
         console.log('✅ Token válido para usuário:', telegramId);
       } catch (e) {
         console.error('❌ Erro ao verificar token:', e);
-        document.getElementById('connectorsGrid').style.display = 'none';
-        document.getElementById('tokenExpired').style.display = 'block';
+        showTokenExpired("Falha na comunicação com o servidor. Tente novamente.");
         return;
       }
       await loadConnections();
@@ -288,6 +287,12 @@
     function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); selectedScopes = []; }
     function showBanner(type, msg) { const b = document.getElementById('banner'); b.className = `banner show ${type}`; b.textContent = msg; setTimeout(() => b.classList.remove('show'), 4000); }
     function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+    function showTokenExpired(msg) {
+      if (msg) document.getElementById('tokenExpiredMsg').innerText = msg;
+      document.getElementById('connectorsGrid').style.display = 'none';
+      document.getElementById('tokenExpired').style.display = 'block';
+    }
 
     init();
   </script>

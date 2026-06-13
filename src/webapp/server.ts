@@ -91,9 +91,13 @@ app.get('/api/verify', (req: Request, res: Response) => {
 app.get('/api/connections', async (req: Request, res: Response) => {
   const token = req.query.token as string;
   const decoded = verifyUserToken(token || '');
-  if (!decoded) return res.status(401).json({ error: 'Token inválido' });
+  if (!decoded) {
+    console.warn('⚠️ [API] Tentativa de acesso às conexões com token inválido');
+    return res.status(401).json({ error: 'Sua sessão expirou ou o link é inválido. Por favor, gere um novo link no Telegram.' });
+  }
 
   try {
+    console.log(`🔍 [API] Buscando conexões para usuário ${decoded.telegram_id}`);
     const integrations = await getAllIntegrations(decoded.telegram_id);
     const status: Record<string, { connected: boolean; connectedAt?: number; scope?: string }> = {};
     const providers = ['gmail', 'drive', 'calendar', 'sheets', 'notion', 'github'];
@@ -105,7 +109,8 @@ app.get('/api/connections', async (req: Request, res: Response) => {
     }
     res.json({ telegram_id: decoded.telegram_id, integrations: status });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error(`❌ [API] Erro ao buscar conexões para ${decoded.telegram_id}:`, error);
+    res.status(500).json({ error: `Falha ao carregar conexões: ${error.message}` });
   }
 });
 
@@ -125,17 +130,31 @@ app.get('/oauth/google/callback', async (req: Request, res: Response) => {
   const baseUrl = `${req.protocol}://${req.get('host')}`;
   
   if (error) return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(String(error))}&provider=google`);
-  if (!code || !state) return res.status(400).send('Código ou state ausente');
+  if (!code || !state) {
+    console.error('❌ [Google OAuth] Código ou state ausente:', { code: !!code, state: !!state });
+    return res.status(400).send('Erro: Código de autorização ou estado de segurança ausente.');
+  }
 
   try {
+    console.log('🔄 [Google OAuth] Iniciando troca de código...');
     const stateData = resolveGoogleState(String(state));
+    console.log(`👤 [Google OAuth] Usuário: ${stateData.telegram_id}, Serviços: ${stateData.services.join(', ')}`);
+    
     const tokens = await exchangeGoogleCode(String(code));
+    console.log('✅ [Google OAuth] Tokens obtidos com sucesso');
+    
     await saveGoogleConnection(stateData.telegram_id, tokens, stateData.services);
     notifyTelegram(stateData.telegram_id, stateData.services);
+    
     res.redirect(`${baseUrl}/conectores.html?success=true&provider=google&services=${stateData.services.join(',')}`);
   } catch (error: any) {
-    console.error('Erro no callback Google:', error);
-    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(error.message)}&provider=google`);
+    const errorMsg = error.response?.data?.error_description || error.message;
+    console.error('❌ [Google OAuth] Erro no callback:', {
+      message: error.message,
+      details: error.response?.data,
+      stack: error.stack
+    });
+    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(`Falha na conexão com Google: ${errorMsg}`)}&provider=google`);
   }
 });
 
@@ -155,17 +174,31 @@ app.get('/oauth/notion/callback', async (req: Request, res: Response) => {
   const baseUrl = `${req.protocol}://${req.get('host')}`;
 
   if (error) return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(String(error))}&provider=notion`);
-  if (!code || !state) return res.status(400).send('Código ou state ausente');
+  if (!code || !state) {
+    console.error('❌ [Notion OAuth] Código ou state ausente:', { code: !!code, state: !!state });
+    return res.status(400).send('Erro: Código de autorização ou estado de segurança ausente.');
+  }
 
   try {
+    console.log('🔄 [Notion OAuth] Iniciando troca de código...');
     const stateData = resolveNotionState(String(state));
+    console.log(`👤 [Notion OAuth] Usuário: ${stateData.telegram_id}`);
+    
     const tokenData = await exchangeNotionCode(String(code));
+    console.log('✅ [Notion OAuth] Tokens obtidos com sucesso');
+    
     await saveNotionConnection(stateData.telegram_id, tokenData);
     notifyTelegram(stateData.telegram_id, ['notion']);
+    
     res.redirect(`${baseUrl}/conectores.html?success=true&provider=notion`);
   } catch (error: any) {
-    console.error('Erro no callback Notion:', error);
-    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(error.message)}&provider=notion`);
+    const errorMsg = error.response?.data?.message || error.message;
+    console.error('❌ [Notion OAuth] Erro no callback:', {
+      message: error.message,
+      details: error.response?.data,
+      stack: error.stack
+    });
+    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(`Falha na conexão com Notion: ${errorMsg}`)}&provider=notion`);
   }
 });
 
@@ -185,17 +218,31 @@ app.get('/oauth/github/callback', async (req: Request, res: Response) => {
   const baseUrl = `${req.protocol}://${req.get('host')}`;
 
   if (error) return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(String(error))}&provider=github`);
-  if (!code || !state) return res.status(400).send('Código ou state ausente');
+  if (!code || !state) {
+    console.error('❌ [GitHub OAuth] Código ou state ausente:', { code: !!code, state: !!state });
+    return res.status(400).send('Erro: Código de autorização ou estado de segurança ausente.');
+  }
 
   try {
+    console.log('🔄 [GitHub OAuth] Iniciando troca de código...');
     const stateData = resolveGitHubState(String(state));
+    console.log(`👤 [GitHub OAuth] Usuário: ${stateData.telegram_id}`);
+    
     const tokenData = await exchangeGitHubCode(String(code));
+    console.log('✅ [GitHub OAuth] Tokens obtidos com sucesso');
+    
     await saveGitHubConnection(stateData.telegram_id, tokenData);
     notifyTelegram(stateData.telegram_id, ['github']);
+    
     res.redirect(`${baseUrl}/conectores.html?success=true&provider=github`);
   } catch (error: any) {
-    console.error('Erro no callback GitHub:', error);
-    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(error.message)}&provider=github`);
+    const errorMsg = error.response?.data?.error_description || error.message;
+    console.error('❌ [GitHub OAuth] Erro no callback:', {
+      message: error.message,
+      details: error.response?.data,
+      stack: error.stack
+    });
+    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(`Falha na conexão com GitHub: ${errorMsg}`)}&provider=github`);
   }
 });
 
@@ -220,16 +267,28 @@ app.post('/api/disconnect', async (req: Request, res: Response) => {
 async function notifyTelegram(telegramId: number, services: string[]) {
   try {
     const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-    if (!TELEGRAM_TOKEN) return;
+    if (!TELEGRAM_TOKEN) {
+      console.warn('⚠️ [Telegram] Notificação ignorada: TELEGRAM_TOKEN não configurado.');
+      return;
+    }
     const serviceNames = services.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ');
     const message = `✅ *${serviceNames}* conectado${services.length > 1 ? 's' : ''} com sucesso!`;
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    
+    console.log(`📤 [Telegram] Enviando notificação para ${telegramId}...`);
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: telegramId, text: message, parse_mode: 'Markdown' }),
     });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('❌ [Telegram] Falha ao enviar notificação:', errorData);
+    } else {
+      console.log('✅ [Telegram] Notificação enviada com sucesso');
+    }
   } catch (error) {
-    console.error('Erro ao notificar Telegram:', error);
+    console.error('❌ [Telegram] Erro crítico ao notificar:', error);
   }
 }
 

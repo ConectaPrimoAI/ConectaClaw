@@ -23,7 +23,11 @@ export function generateGitHubAuthUrl(
   scopes: string[] = ['repo', 'read:user', 'notifications']
 ): string {
   const state = Buffer.from(
-    JSON.stringify({ telegram_id: telegramId, ts: Date.now() })
+    JSON.stringify({ 
+      telegram_id: telegramId, 
+      ts: Date.now(),
+      salt: process.env.JWT_SECRET?.substring(0, 8) || 'claw'
+    })
   ).toString('base64url');
 
   const params = new URLSearchParams({
@@ -54,20 +58,30 @@ export async function exchangeGitHubCode(code: string): Promise<{
   token_type: string;
   scope: string;
 }> {
-  const res = await axios.post(
-    'https://github.com/login/oauth/access_token',
-    {
-      client_id: process.env.GITHUB_CLIENT_ID,
-      client_secret: process.env.GITHUB_CLIENT_SECRET,
-      code,
-      redirect_uri: process.env.GITHUB_REDIRECT_URI,
-    },
-    {
-      headers: { Accept: 'application/json' },
-    }
-  );
+  try {
+    const res = await axios.post(
+      'https://github.com/login/oauth/access_token',
+      {
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        code,
+        redirect_uri: process.env.GITHUB_REDIRECT_URI,
+      },
+      {
+        headers: { Accept: 'application/json' },
+      }
+    );
 
-  return res.data;
+    if (res.data.error) {
+      console.error('❌ [GitHub OAuth] Erro retornado pelo GitHub:', res.data);
+      throw new Error(res.data.error_description || res.data.error);
+    }
+
+    return res.data;
+  } catch (error: any) {
+    console.error('❌ [GitHub] Erro na troca de código:', error.response?.data || error.message);
+    throw error;
+  }
 }
 
 /**

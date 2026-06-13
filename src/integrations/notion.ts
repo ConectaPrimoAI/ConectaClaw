@@ -21,7 +21,11 @@ const NOTION_VERSION = '2022-06-28';
  */
 export function generateNotionAuthUrl(telegramId: number): string {
   const state = Buffer.from(
-    JSON.stringify({ telegram_id: telegramId, ts: Date.now() })
+    JSON.stringify({ 
+      telegram_id: telegramId, 
+      ts: Date.now(),
+      salt: process.env.JWT_SECRET?.substring(0, 8) || 'claw'
+    })
   ).toString('base64url');
 
   const params = new URLSearchParams({
@@ -60,21 +64,27 @@ export async function exchangeNotionCode(code: string): Promise<{
     `${process.env.NOTION_CLIENT_ID}:${process.env.NOTION_CLIENT_SECRET}`
   ).toString('base64');
 
-  const res = await axios.post(
-    'https://api.notion.com/v1/oauth/token',
-    {
-      grant_type: 'authorization_code',
-      code,
-    },
-    {
-      headers: {
-        Authorization: `Basic ${credentials}`,
-        'Content-Type': 'application/json',
+  try {
+    const res = await axios.post(
+      'https://api.notion.com/v1/oauth/token',
+      {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: process.env.NOTION_REDIRECT_URI,
       },
-    }
-  );
+      {
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
-  return res.data;
+    return res.data;
+  } catch (error: any) {
+    console.error('❌ [Notion] Erro na troca de código:', error.response?.data || error.message);
+    throw error;
+  }
 }
 
 /**

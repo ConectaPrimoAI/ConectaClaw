@@ -111,19 +111,18 @@ export async function saveIntegration(
     const userDoc = await userRef.get();
     const now = Date.now();
 
-    if (userDoc.exists) {
-      await userRef.update({
-        [`integrations.${provider}`]: data,
-        updatedAt: now,
-      });
-    } else {
-      await userRef.set({
-        telegram_id: telegramId,
-        integrations: { [provider]: data },
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
+    // ✅ Usamos set com merge: true para garantir que o documento exista e atualizar apenas o campo necessário.
+    // Isso resolve erros de "Missing or insufficient permissions" quando as regras do Firestore
+    // exigem que o documento exista ou quando há conflitos de escrita.
+    await userRef.set({
+      telegram_id: telegramId,
+      integrations: {
+        [provider]: data
+      },
+      updatedAt: now,
+      // Se não existir, define createdAt. Se existir, mantém o valor atual.
+      createdAt: userDoc.exists ? userDoc.data()?.createdAt || now : now
+    }, { merge: true });
   } catch (error: any) {
     console.error(`❌ Erro ao salvar integração ${provider}:`, error.message);
     throw error;
@@ -169,10 +168,12 @@ export async function removeIntegration(
   try {
     if (!db) throw new Error('Firebase não inicializado');
     const userRef = db.collection('users').doc(String(telegramId));
-    await userRef.update({
-      [`integrations.${provider}`]: admin.firestore.FieldValue.delete(),
+    await userRef.set({
+      integrations: {
+        [provider]: admin.firestore.FieldValue.delete()
+      },
       updatedAt: Date.now(),
-    });
+    }, { merge: true });
   } catch (error: any) {
     console.error(`❌ Erro ao remover integração ${provider}:`, error.message);
     throw error;
@@ -189,18 +190,21 @@ export async function updateTokens(
   try {
     if (!db) throw new Error('Firebase não inicializado');
     const userRef = db.collection('users').doc(String(telegramId));
-    const updates: Record<string, any> = {
-      [`integrations.${provider}.accessToken`]: accessToken,
-      [`integrations.${provider}.updatedAt`]: Date.now(),
+    
+    const integrationUpdate: any = {
+      accessToken,
+      updatedAt: Date.now()
     };
 
-    if (refreshToken) {      updates[`integrations.${provider}.refreshToken`] = refreshToken;
-    }
-    if (tokenExpiry) {
-      updates[`integrations.${provider}.tokenExpiry`] = tokenExpiry;
-    }
+    if (refreshToken) integrationUpdate.refreshToken = refreshToken;
+    if (tokenExpiry) integrationUpdate.tokenExpiry = tokenExpiry;
 
-    await userRef.update(updates);
+    await userRef.set({
+      integrations: {
+        [provider]: integrationUpdate
+      },
+      updatedAt: Date.now()
+    }, { merge: true });
   } catch (error: any) {
     console.error(`❌ Erro ao atualizar tokens ${provider}:`, error.message);
     throw error;
@@ -215,15 +219,12 @@ export async function saveUserInfo(
   try {
     if (!db) throw new Error('Firebase não inicializado');
     const userRef = db.collection('users').doc(String(telegramId));
-    const userDoc = await userRef.get();
-
-    if (userDoc.exists) {
-      await userRef.update({
-        username: username || admin.firestore.FieldValue.delete(),
-        first_name: firstName || admin.firestore.FieldValue.delete(),
-        updatedAt: Date.now(),
-      });
-    }
+    
+    await userRef.set({
+      username: username || admin.firestore.FieldValue.delete(),
+      first_name: firstName || admin.firestore.FieldValue.delete(),
+      updatedAt: Date.now(),
+    }, { merge: true });
   } catch (error: any) {
     console.error(`❌ Erro ao salvar info do usuário ${telegramId}:`, error.message);
     throw error;

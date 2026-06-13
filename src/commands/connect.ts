@@ -9,7 +9,7 @@ import jwt from 'jsonwebtoken';
 import { getAllIntegrations } from '../db/firebase.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'conectaclaw_secret_2026_x9f2m7p4q8r1w5e6';
-const JWT_EXPIRY = '30m';
+const JWT_EXPIRY = '2h'; // Aumentado para 2 horas para evitar expiração prematura
 
 export function generateUserToken(telegramId: number): string {
   const now = Math.floor(Date.now() / 1000);
@@ -20,18 +20,35 @@ export function generateUserToken(telegramId: number): string {
       type: 'connector_panel',
     },
     JWT_SECRET,
-    { expiresIn: JWT_EXPIRY }
+    { 
+      expiresIn: JWT_EXPIRY,
+      algorithm: 'HS256'
+    }
   );
 }
 
 export function verifyUserToken(token: string): { telegram_id: number } | null {
+  if (!token) return null;
   try {
     const decoded = jwt.verify(token, JWT_SECRET, {
-      clockTolerance: 60, // Tolerância de 60 segundos para dessincronização de relógio
+      clockTolerance: 300, // Aumentado para 5 minutos (300s) para lidar com variações de relógio do servidor/cliente
+      algorithms: ['HS256']
     }) as any;
+    
+    if (decoded.type !== 'connector_panel') {
+      console.warn('⚠️ Token JWT com tipo inválido:', decoded.type);
+      return null;
+    }
+
     return { telegram_id: decoded.telegram_id };
   } catch (error: any) {
-    console.error('❌ Erro ao verificar token JWT:', error.message);
+    let detail = error.message;
+    if (error.name === 'TokenExpiredError') {
+      detail = 'O link de conexão expirou por segurança (validade de 2h). Por favor, gere um novo link usando /conectar.';
+    } else if (error.name === 'JsonWebTokenError') {
+      detail = 'O link de conexão é inválido ou foi corrompido.';
+    }
+    console.error('❌ [JWT] Erro na verificação:', detail);
     return null;
   }
 }
@@ -66,7 +83,7 @@ export async function handleConectar(ctx: Context): Promise<void> {
     const message = `🦞 E aí, ${firstName}! Vou te conectar às suas ferramentas favoritas.\n\n` +
       `Clica no botão abaixo pra abrir o painel de conectores. Lá você escolhe o que liberar e conecta em segundos.\n\n` +
       `🔒 *Seguro:* Seus tokens ficam criptografados e você pode desconectar quando quiser.\n` +
-      `⏰ *Validade:* 30 minutos${statusText}`;
+      `⏰ *Validade:* 2 horas${statusText}`;
 
     // ✅ Usa Markup do Telegraf corretamente (array de arrays para linhas separadas)
     await ctx.reply(
