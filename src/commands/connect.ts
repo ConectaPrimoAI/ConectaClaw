@@ -64,8 +64,7 @@ export async function handleConectar(ctx: Context): Promise<void> {
     await ctx.reply(
       `🦞 E aí, ${firstName}! Vou te conectar às suas ferramentas favoritas.\n\n` +
         `Clica no botão abaixo pra abrir o painel de conectores. Lá você escolhe o que liberar e conecta em segundos.\n\n` +
-        `🔒 *Seguro:* Seus tokens ficam criptografados e você pode desconectar quando quiser.\n` +
-        `⏰ *Validade:* 30 minutos${statusText}`,
+        `🔒 ATENÇÃO: Ao conectar um serviço, você autoriza o acesso necessário para a integração. O ConectaClaw não se responsabiliza por falhas ou problemas de serviços de terceiros. .\n` +
       {
         parse_mode: 'Markdown',
         reply_markup: {
