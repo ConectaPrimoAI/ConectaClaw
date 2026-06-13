@@ -1,6 +1,7 @@
 /**
- * conectaclaw-agent.ts v21.0
+ * conectaclaw-agent.ts v23.0
  * Orquestrador principal com lógica de intenção, áudio, vídeo e imagem via Replicate
+ * + Integrações OAuth2 (Gmail, Drive, Calendar, Sheets, Notion, GitHub)
  */
 import { Telegraf, Context } from 'telegraf';
 import Groq from 'groq-sdk';
@@ -17,7 +18,7 @@ import { registry as skillRegistry } from './skills/index.js';
 import { transcribeAudio, synthesizeSpeech } from './agents/VoiceAgent.js';
 import { analyzeImage } from './agents/VisionAgent.js';
 
-// Adicionar no topo do arquivo, após os imports existentes
+// ── Integrações OAuth2 ─────────────────────────────────────
 import { startWebApp } from './webapp/server.js';
 import { handleConectar, handleIntegrationsStatus, handleDisconnect } from './commands/connect.js';
 import { 
@@ -29,21 +30,6 @@ import {
   handleRepoCommand, 
   handleIssuesCommand 
 } from './commands/integrations-commands.js';
-
-// Iniciar WebApp (OAuth callbacks)
-startWebApp();
-
-// Registrar comandos de integração (adicionar após bot.command existentes)
-bot.command('conectar', handleConectar);
-bot.command('integracoes', handleIntegrationsStatus);
-bot.command('desconectar', handleDisconnect);
-bot.command('email', handleEmailCommand);
-bot.command('emails', handleReadEmailsCommand);
-bot.command('agenda', handleAgendaCommand);
-bot.command('arquivos', handleArquivosCommand);
-bot.command('notion', handleNotionCommand);
-bot.command('repo', handleRepoCommand);
-bot.command('issues', handleIssuesCommand);
 
 // ── Validação ───────────────────────────────────────────────
 if (!process.env.TELEGRAM_TOKEN || !process.env.GROQ_API_KEY) {
@@ -178,6 +164,25 @@ async function handleIntent(ctx: Context, text: string): Promise<string> {
     }
 }
 
+// ═══════════════════════════════════════════════════════════
+// COMANDOS DE INTEGRAÇÃO OAUTH2
+// ═══════════════════════════════════════════════════════════
+
+bot.command('conectar', handleConectar);
+bot.command('integracoes', handleIntegrationsStatus);
+bot.command('desconectar', handleDisconnect);
+bot.command('email', handleEmailCommand);
+bot.command('emails', handleReadEmailsCommand);
+bot.command('agenda', handleAgendaCommand);
+bot.command('arquivos', handleArquivosCommand);
+bot.command('notion', handleNotionCommand);
+bot.command('repo', handleRepoCommand);
+bot.command('issues', handleIssuesCommand);
+
+// ═══════════════════════════════════════════════════════════
+// COMANDOS ORIGINAIS
+// ═══════════════════════════════════════════════════════════
+
 // ── /start ──────────────────────────────────────────────────
 bot.start((ctx) => {
     ctx.reply(
@@ -188,6 +193,7 @@ bot.start((ctx) => {
         '   • 🖼️ Foto (análise com visão)\n' +
         '   • 🎨 Imagem — Gero imagens profissionais pra você! \n' +
         '   • 🎬 Video — Gero vídeos surreais\n' +
+        '   • 🔌 /conectar — Conecte Gmail, Drive, Notion, GitHub\n' +
         '   • 🗑️ /clear — limpa minha memória'
     );
 });
@@ -210,7 +216,8 @@ bot.command('model', (ctx) => {
         `🔊 TTS: Replicate (Kokoro) + Google (fallback)\n` +
         `👁️ Visão: \`llama-3.2-90b-vision-preview\` (Groq)\n` +
         `🎨 Imagem: Pollinations (FLUX) + Replicate\n` +
-        `🎬 Vídeo: ${replicate ? 'Replicate (minimax/video-01)' : 'Desabilitado'}\n\n` +
+        `🎬 Vídeo: ${replicate ? 'Replicate (minimax/video-01)' : 'Desabilitado'}\n` +
+        `🔌 Integrações: Gmail, Drive, Calendar, Sheets, Notion, GitHub\n\n` +
         `${replicate ? '✅' : '⚠️'} Replicate: ${replicate ? 'configurado' : 'não configurado'}`
     );
 });
@@ -233,7 +240,7 @@ bot.command('imagem', async (ctx) => {
         const response = await axios.get(imageUrl, {
             responseType: 'arraybuffer',
             timeout: 120000,
-            headers: { 'User-Agent': 'ConectaClaw/21.0' }
+            headers: { 'User-Agent': 'ConectaClaw/23.0' }
         });
 
         if (response.data && response.data.byteLength > 1000) {
@@ -474,13 +481,23 @@ bot.on('text', async (ctx) => {
     }
 });
 
-// ── Inicialização ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// INICIALIZAÇÃO
+// ═══════════════════════════════════════════════════════════
+
+// Iniciar WebApp (servidor Express para OAuth callbacks)
+startWebApp();
+
+// Iniciar serviços originais
 startWebTerminal();
 startReminderManager(bot);
+
+// Launch bot
 bot.launch();
 
-console.log('🚀 Conecta Claw🦞 v21.0 iniciado!');
+console.log('🚀 Conecta Claw🦞 v23.0 iniciado!');
 console.log(`🎨 Replicate: ${replicate ? '✅ configurado' : '❌ desabilitado'}`);
+console.log('🌐 WebApp: OAuth callbacks ativo');
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
