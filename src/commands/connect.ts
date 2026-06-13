@@ -7,12 +7,18 @@ import { Context } from 'telegraf';
 import jwt from 'jsonwebtoken';
 import { getAllIntegrations } from '../db/firebase.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
-const JWT_EXPIRY = '10m';
+// Garantir que a secret seja consistente
+const JWT_SECRET = process.env.JWT_SECRET || 'conectaclaw_secret_2026_x9f2m7p4q8r1w5e6';
+const JWT_EXPIRY = '30m'; // Aumentei para 30 minutos
 
 export function generateUserToken(telegramId: number): string {
+  const now = Math.floor(Date.now() / 1000);
   return jwt.sign(
-    { telegram_id: telegramId, iat: Math.floor(Date.now() / 1000) },
+    {
+      telegram_id: telegramId,
+      iat: now,
+      type: 'connector_panel',
+    },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRY }
   );
@@ -20,9 +26,12 @@ export function generateUserToken(telegramId: number): string {
 
 export function verifyUserToken(token: string): { telegram_id: number } | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      clockTolerance: 60, // Tolerância de 60 segundos para dessincronização de relógio
+    }) as any;
     return { telegram_id: decoded.telegram_id };
-  } catch {
+  } catch (error: any) {
+    console.error('❌ Erro ao verificar token JWT:', error.message);
     return null;
   }
 }
@@ -34,6 +43,8 @@ export async function handleConectar(ctx: Context): Promise<void> {
 
     const token = generateUserToken(telegramId);
     const panelUrl = `https://conecta-primo-ai.vercel.app/conectores.html?token=${token}`;
+
+    console.log(`🔗 Token gerado para ${telegramId} (válido por ${JWT_EXPIRY})`);
 
     let statusText = '';
     try {
@@ -48,13 +59,14 @@ export async function handleConectar(ctx: Context): Promise<void> {
         if (names) statusText = `\n\n📊 *Conectados:* ${names}`;
       }
     } catch (dbError: any) {
-      console.warn('⚠️ Falha ao buscar integrações (continuando sem status):', dbError.message);
+      console.warn('⚠️ Falha ao buscar integrações:', dbError.message);
     }
 
     await ctx.reply(
       `🦞 E aí, ${firstName}! Vou te conectar às suas ferramentas favoritas.\n\n` +
         `Clica no botão abaixo pra abrir o painel de conectores. Lá você escolhe o que liberar e conecta em segundos.\n\n` +
-        `🔒 *Seguro:* Seus tokens ficam criptografados e você pode desconectar quando quiser.${statusText}`,
+        `🔒 *Seguro:* Seus tokens ficam criptografados e você pode desconectar quando quiser.\n` +
+        `⏰ *Validade:* 30 minutos${statusText}`,
       {
         parse_mode: 'Markdown',
         reply_markup: {
