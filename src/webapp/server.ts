@@ -8,6 +8,8 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+
+// Imports das integrações
 import {
   generateGoogleAuthUrl, exchangeGoogleCode, resolveGoogleState, saveGoogleConnection,
 } from '../integrations/google.js';
@@ -31,56 +33,38 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ═══════════════════════════════════════════════════════════
-// ENCONTRAR PASTA PUBLIC - MÚLTIPLOS CAMINHOS
+// SERVIR ARQUIVOS ESTÁTICOS
 // ═══════════════════════════════════════════════════════════
 
-console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-console.log(' DEBUG: Procurando pasta public/');
-console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-console.log(`📍 __dirname: ${__dirname}`);
-console.log(`📍 process.cwd(): ${process.cwd()}`);
+const publicDir = path.join(process.cwd(), 'public');
+console.log(`📁 Public dir: ${publicDir}`);
+console.log(`📁 Existe? ${fs.existsSync(publicDir)}`);
 
-const possiblePaths = [
-  path.join(process.cwd(), 'public'),
-  path.join(__dirname, '..', '..', 'public'),
-  path.join(__dirname, '..', 'public'),
-  path.join(process.cwd(), 'dist', 'public'),
-  path.join(__dirname, 'public'),
-];
-let publicDir = '';
-for (const p of possiblePaths) {
-  const exists = fs.existsSync(p);
-  console.log(`  ${exists ? '✅' : '❌'} ${p}`);
-  if (exists && !publicDir) {
-    publicDir = p;
-  }
-}
-
-if (!publicDir) {
-  console.error('❌ ERRO: Pasta public/ não encontrada!');
-  console.error('💡 Verifique se public/connectors.html existe no repositório');
-} else {
-  console.log(`✅ Usando: ${publicDir}`);
+if (fs.existsSync(publicDir)) {
+  const files = fs.readdirSync(publicDir);
+  console.log(`📂 Arquivos em public/: ${files.join(', ')}`);
   app.use(express.static(publicDir));
+} else {
+  console.error('❌ ERRO: Pasta public/ não encontrada!');
 }
-
-// ══════════════════════════════════════════════════════════
-// ROTAS EXPLÍCITAS PARA HTML
+// ═══════════════════════════════════════════════════════════
+// ROTA EXPLÍCITA PARA CONECTORES.HTML
 // ═══════════════════════════════════════════════════════════
 
 app.get('/conectores.html', (req: Request, res: Response) => {
-  const filePath = path.join(publicDir || process.cwd(), 'connectors.html');
-  console.log(`🔍 Tentando servir: ${filePath}`);
+  const filePath = path.join(publicDir, 'conectores.html');
+  console.log(`🔍 Procurando: ${filePath}`);
+  console.log(`🔍 Existe? ${fs.existsSync(filePath)}`);
   
   if (fs.existsSync(filePath)) {
-    console.log(`✅ Servindo connectors.html de: ${filePath}`);
+    console.log(`✅ Servindo conectores.html`);
     res.sendFile(filePath);
   } else {
     console.error(`❌ Arquivo não encontrado: ${filePath}`);
     res.status(404).send(`
       <h1>❌ Arquivo não encontrado</h1>
       <p>Caminho: ${filePath}</p>
-      <p>Public dir: ${publicDir || 'não definido'}</p>
+      <p>Existe? ${fs.existsSync(filePath)}</p>
     `);
   }
 });
@@ -96,7 +80,8 @@ app.get('/', (req: Request, res: Response) => {
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ 
     status: 'ok', 
-    service: 'ConectaClaw',     timestamp: Date.now(),
+    service: 'ConectaClaw',
+    timestamp: Date.now(),
     publicDir: publicDir || 'não encontrado'
   });
 });
@@ -111,8 +96,7 @@ app.get('/api/verify', (req: Request, res: Response) => {
   }
 
   const decoded = verifyUserToken(tokenToVerify);
-  if (!decoded) {
-    return res.status(401).json({ error: 'Token inválido ou expirado' });
+  if (!decoded) {    return res.status(401).json({ error: 'Token inválido ou expirado' });
   }
 
   res.json({ valid: true, telegram_id: decoded.telegram_id });
@@ -145,7 +129,8 @@ app.post('/api/auth/google/url', async (req: Request, res: Response) => {
   if (!decoded) return res.status(401).json({ error: 'Token inválido' });
   try {
     res.json({ url: generateGoogleAuthUrl(services || [], decoded.telegram_id) });
-  } catch (error: any) {    res.status(500).json({ error: error.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -160,8 +145,7 @@ app.get('/oauth/google/callback', async (req: Request, res: Response) => {
     await saveGoogleConnection(stateData.telegram_id, tokens, stateData.services);
     notifyTelegram(stateData.telegram_id, stateData.services);
     res.redirect(`https://conectaclaw.onrender.com/conectores.html?success=true&provider=google&services=${stateData.services.join(',')}`);
-  } catch (error: any) {
-    console.error('Erro no callback Google:', error);
+  } catch (error: any) {    console.error('Erro no callback Google:', error);
     res.redirect(`https://conectaclaw.onrender.com/conectores.html?error=${encodeURIComponent(error.message)}&provider=google`);
   }
 });
@@ -194,7 +178,8 @@ app.get('/oauth/notion/callback', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/auth/github/url', async (req: Request, res: Response) => {  const { token, scopes } = req.body;
+app.post('/api/auth/github/url', async (req: Request, res: Response) => {
+  const { token, scopes } = req.body;
   const decoded = verifyUserToken(token || '');
   if (!decoded) return res.status(401).json({ error: 'Token inválido' });
   try {
@@ -209,8 +194,7 @@ app.get('/oauth/github/callback', async (req: Request, res: Response) => {
   if (error) return res.redirect(`https://conectaclaw.onrender.com/conectores.html?error=${encodeURIComponent(String(error))}&provider=github`);
   if (!code || !state) return res.status(400).send('Código ou state ausente');
 
-  try {
-    const stateData = resolveGitHubState(String(state));
+  try {    const stateData = resolveGitHubState(String(state));
     const tokenData = await exchangeGitHubCode(String(code));
     await saveGitHubConnection(stateData.telegram_id, tokenData);
     notifyTelegram(stateData.telegram_id, ['github']);
@@ -235,6 +219,10 @@ app.post('/api/disconnect', async (req: Request, res: Response) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════
+// NOTIFICAÇÃO TELEGRAM
+// ═══════════════════════════════════════════════════════════
+
 async function notifyTelegram(telegramId: number, services: string[]) {
   try {
     const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
@@ -243,15 +231,19 @@ async function notifyTelegram(telegramId: number, services: string[]) {
     const message = `✅ *${serviceNames}* conectado${services.length > 1 ? 's' : ''} com sucesso!`;
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },      body: JSON.stringify({ chat_id: telegramId, text: message, parse_mode: 'Markdown' }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: telegramId, text: message, parse_mode: 'Markdown' }),
     });
   } catch (error) {
     console.error('Erro ao notificar Telegram:', error);
   }
 }
 
-export function startWebApp(): void {
-  app.listen(PORT, () => {
+// ═══════════════════════════════════════════════════════════
+// INICIAR SERVIDOR
+// ═══════════════════════════════════════════════════════════
+
+export function startWebApp(): void {  app.listen(PORT, () => {
     console.log(`🌐 WebApp rodando na porta ${PORT}`);
     console.log(`   Painel: https://conectaclaw.onrender.com/conectores.html`);
   });
