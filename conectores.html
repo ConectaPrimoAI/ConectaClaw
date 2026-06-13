@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ConectaClaw — Painel de Conectores</title>
+  <style>
+    :root { --bg-primary: #0a0a0f; --bg-secondary: #12121a; --bg-card: #1a1a2e; --bg-card-hover: #222240; --text-primary: #e8e8f0; --text-secondary: #9898b0; --accent: #e63946; --accent-glow: rgba(230, 57, 70, 0.3); --success: #2ecc71; --success-glow: rgba(46, 204, 113, 0.3); --border: #2a2a40; --border-hover: #3a3a55; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; overflow-x: hidden; }
+    body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(ellipse at 20% 50%, rgba(230, 57, 70, 0.05) 0%, transparent 50%), radial-gradient(ellipse at 80% 20%, rgba(100, 100, 255, 0.03) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+    .container { max-width: 900px; margin: 0 auto; padding: 24px 20px; position: relative; z-index: 1; }
+    .header { text-align: center; margin-bottom: 32px; padding: 24px; background: var(--bg-secondary); border-radius: 16px; border: 1px solid var(--border); }
+    .header-logo { font-size: 32px; margin-bottom: 8px; }
+    .header h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+    .header h1 .claw { color: var(--accent); }
+    .header h1 .brain { color: #6c63ff; }
+    .header p { color: var(--text-secondary); font-size: 14px; }
+    .badge { display: inline-block; background: var(--accent); color: white; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
+    .banner { padding: 14px 20px; border-radius: 12px; margin-bottom: 20px; font-size: 14px; display: none; animation: slideDown 0.3s ease; }
+    .banner.show { display: flex; align-items: center; gap: 10px; }
+    .banner.success { background: rgba(46, 204, 113, 0.1); border: 1px solid var(--success); color: var(--success); }
+    .banner.error { background: rgba(230, 57, 70, 0.1); border: 1px solid var(--accent); color: var(--accent); }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    .connectors-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .connector-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; transition: all 0.3s ease; cursor: pointer; position: relative; overflow: hidden; }
+    .connector-card:hover { background: var(--bg-card-hover); border-color: var(--border-hover); transform: translateY(-2px); }
+    .connector-card.connected { border-color: var(--success); box-shadow: 0 0 20px var(--success-glow); }
+    .connector-card.coming-soon { opacity: 0.5; cursor: not-allowed; }
+    .connector-card .logo { width: 48px; height: 48px; margin-bottom: 16px; }
+    .connector-card .logo svg { width: 100%; height: 100%; }
+    .connector-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+    .connector-card p { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+    .connector-card .status { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+    .connector-card .status.connected { color: var(--success); }
+    .connector-card .status.disconnected { color: var(--text-secondary); }
+    .connector-card .btn { width: 100%; padding: 10px 16px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+    .btn-connect { background: var(--accent); color: white; }
+    .btn-connect:hover { background: #d62836; box-shadow: 0 4px 15px var(--accent-glow); }
+    .btn-connected { background: rgba(46, 204, 113, 0.15); color: var(--success); border: 1px solid var(--success); }
+    .btn-coming-soon { background: var(--border); color: var(--text-secondary); cursor: not-allowed; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+    .modal-overlay.show { display: flex; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .modal { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 20px; padding: 32px; max-width: 440px; width: 100%; animation: scaleIn 0.3s ease; }
+    @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .modal h2 { font-size: 20px; margin-bottom: 8px; }
+    .modal .subtitle { color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; }
+    .permission-list { list-style: none; margin-bottom: 24px; }
+    .permission-list li { display: flex; align-items: flex-start; gap: 12px; padding: 12px; background: var(--bg-card); border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: background 0.2s; }    .permission-list li:hover { background: var(--bg-card-hover); }
+    .permission-list li input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); margin-top: 2px; flex-shrink: 0; }
+    .permission-list li .perm-info { flex: 1; }
+    .permission-list li .perm-label { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+    .permission-list li .perm-desc { font-size: 12px; color: var(--text-secondary); }
+    .modal-actions { display: flex; gap: 12px; }
+    .modal-actions button { flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-cancel { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
+    .btn-cancel:hover { background: var(--bg-card-hover); }
+    .btn-confirm { background: var(--accent); color: white; }
+    .btn-confirm:hover { background: #d62836; }
+    .btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+    .loading-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .footer { text-align: center; padding: 20px; color: var(--text-secondary); font-size: 12px; border-top: 1px solid var(--border); }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .token-expired { text-align: center; padding: 60px 20px; }
+    .token-expired h2 { font-size: 24px; margin-bottom: 12px; }
+    .token-expired p { color: var(--text-secondary); margin-bottom: 20px; }
+    @media (max-width: 600px) { .connectors-grid { grid-template-columns: 1fr; } .modal { padding: 24px; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-logo">🦞 × 🧠</div>
+      <h1><span class="claw">ConectaClaw</span> on <span class="brain">Conecta Primo AI</span><span class="badge">Beta</span></h1>
+      <p>Conecte suas ferramentas e potencialize seu assistente</p>
+    </div>
+    <div id="banner" class="banner"></div>
+    <div id="tokenExpired" class="token-expired" style="display:none;">
+      <h2>⏰ Link expirado ou inválido</h2>
+      <p>Seu link de conexão expirou por segurança (validade de 30 min). Volte ao Telegram e use <code>/conectar</code> novamente.</p>
+      <button class="btn btn-connect" style="max-width: 200px; margin: 20px auto 0; display: block;" onclick="window.close()">Fechar</button>
+    </div>
+    <div id="connectorsGrid" class="connectors-grid"></div>
+    <div class="footer">🔒 Integrações seguras providas por <a href="#">ConectaClaw</a></div>
+  </div>
+  <div id="modalOverlay" class="modal-overlay">
+    <div class="modal">
+      <h2 id="modalTitle">Permissões</h2>
+      <p class="subtitle" id="modalSubtitle">Selecione o que deseja liberar</p>
+      <ul class="permission-list" id="permissionList"></ul>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+        <button class="btn-confirm" id="btnConfirm" onclick="confirmConnect()">Conectar</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    // ✅ CORREÇÃO CRÍTICA: Usa a origem atual (Render) automaticamente
+    const API_BASE_URL = window.location.origin; 
+    const PANEL_URL = `${window.location.origin}/conectores.html`;
+
+    const CONNECTORS = [
+      { id: 'gmail', name: 'Gmail', description: 'Ler, enviar e gerenciar e-mails', logo: `<svg viewBox="0 0 48 48"><path fill="#4CAF50" d="M41,7H7C5.3,7,4,8.3,4,10v28c0,1.7,1.3,3,3,3h34c1.7,0,3-1.3,3-3V10C44,8.3,42.7,7,41,7z"/><path fill="#E53935" d="M24,28.3L4.5,13.2C4.2,13.7,4,14.3,4,15v23c0,1.7,1.3,3,3,3h34c1.7,0,3-1.3,3-3V15c0-0.7-0.2-1.3-0.5-1.8L24,28.3z"/><path fill="#FFC107" d="M24,28.3l19.5-15.1C42.8,12.5,41.9,12,41,12H7C6.1,12,5.2,12.5,4.5,13.2L24,28.3z"/><path fill="#1565C0" d="M4.5,38.2C5.2,38.8,6.1,39,7,39h34c0.9,0,1.8-0.2,2.5-0.8L24,28.3L4.5,38.2z"/></svg>`, available: true, scopes: [{ id: 'read', label: 'Ler e-mails', description: 'Visualizar suas mensagens' }, { id: 'send', label: 'Enviar e-mails', description: 'Enviar mensagens em seu nome' }, { id: 'manage', label: 'Gerenciar', description: 'Criar labels, arquivar' }] },
+      { id: 'drive', name: 'Google Drive', description: 'Acessar e gerenciar seus arquivos', logo: `<svg viewBox="0 0 48 48"><path fill="#4CAF50" d="M37 42H11c-1.1 0-2-.9-2-2V8c0-1.1.9-2 2-2h26c1.1 0 2 .9 2 2v32c0 1.1-.9 2-2 2z"/><path fill="#FFC107" d="M24 6L4 24l8 8 12-12 12 12 8-8z"/><path fill="#1565C0" d="M24 20L12 32l4 10h16l4-10z"/></svg>`, available: true, scopes: [{ id: 'read', label: 'Ler arquivos', description: 'Visualizar arquivos e pastas' }, { id: 'write', label: 'Criar e editar', description: 'Criar e editar arquivos' }] },
+      { id: 'calendar', name: 'Google Calendar', description: 'Gerenciar sua agenda e eventos', logo: `<svg viewBox="0 0 48 48"><rect x="6" y="10" width="36" height="32" rx="4" fill="#1565C0"/><rect x="6" y="10" width="36" height="10" fill="#0D47A1"/><rect x="12" y="6" width="4" height="8" rx="2" fill="#455A64"/><rect x="32" y="6" width="4" height="8" rx="2" fill="#455A64"/><rect x="12" y="26" width="6" height="4" rx="1" fill="#fff" opacity="0.8"/><rect x="21" y="26" width="6" height="4" rx="1" fill="#fff" opacity="0.5"/><rect x="30" y="26" width="6" height="4" rx="1" fill="#fff" opacity="0.5"/><rect x="12" y="33" width="6" height="4" rx="1" fill="#fff" opacity="0.5"/><rect x="21" y="33" width="6" height="4" rx="1" fill="#fff" opacity="0.5"/></svg>`, available: true, scopes: [{ id: 'read', label: 'Ler eventos', description: 'Visualizar sua agenda' }, { id: 'write', label: 'Criar eventos', description: 'Criar e editar eventos' }] },
+      { id: 'sheets', name: 'Google Sheets', description: 'Ler e editar planilhas', logo: `<svg viewBox="0 0 48 48"><path fill="#4CAF50" d="M38 6H10C7.8 6 6 7.8 6 10v28c0 2.2 1.8 4 4 4h28c2.2 0 4-1.8 4-4V10c0-2.2-1.8-4-4-4z"/><path fill="#fff" opacity="0.9" d="M12 14h10v8H12zm0 12h10v8H12zm14-12h10v8H26zm14 0v8h-4v-8zm0 12v8h-4v-8zm-14 0h10v8H26z"/><path fill="#4CAF50" opacity="0.3" d="M12 14h10v8H12zm14 0h10v8H26z"/></svg>`, available: true, scopes: [{ id: 'read', label: 'Ler planilhas', description: 'Visualizar dados' }, { id: 'write', label: 'Editar planilhas', description: 'Modificar dados' }] },
+      { id: 'notion', name: 'Notion', description: 'Acessar suas páginas e bancos de dados', logo: `<svg viewBox="0 0 48 48"><path fill="#fff" d="M8 6h28l6 8v28c0 2.2-1.8 4-4 4H8c-2.2 0-4-1.8-4-4V10c0-2.2 1.8-4 4-4z"/><path fill="#333" d="M36 6l6 8h-6V6z"/><text x="14" y="32" font-family="serif" font-size="20" font-weight="bold" fill="#333">N</text></svg>`, available: true, scopes: [{ id: 'read', label: 'Ler conteúdo', description: 'Visualizar páginas' }, { id: 'write', label: 'Criar conteúdo', description: 'Criar e editar páginas' }] },
+      { id: 'github', name: 'GitHub', description: 'Acessar repositórios e issues', logo: `<svg viewBox="0 0 48 48"><path fill="#fff" d="M24 2C11.8 2 2 11.8 2 24c0 9.7 6.3 18 15 20.9 1.1.2 1.5-.5 1.5-1 0-.5 0-1.8 0-3.5-6.1 1.3-7.4-2.9-7.4-2.9-1-2.5-2.4-3.2-2.4-3.2-2-1.4.1-1.3.1-1.3 2.2.2 3.3 2.3 3.3 2.3 1.9 3.3 5.1 2.4 6.3 1.8.2-1.4.8-2.4 1.4-2.9-4.9-.6-10-2.4-10-10.8 0-2.4.9-4.3 2.3-5.9-.2-.6-1-2.8.2-5.8 0 0 1.8-.6 6 2.2 1.7-.5 3.6-.7 5.4-.7 1.8 0 3.7.2 5.4.7 4.1-2.8 6-2.2 6-2.2 1.2 3 .5 5.2.2 5.8 1.4 1.5 2.3 3.5 2.3 5.9 0 8.4-5.1 10.2-10 10.8.8.7 1.5 2 1.5 4.1 0 3 0 5.4 0 6.1 0 .6.4 1.2 1.5 1C39.7 42 46 33.7 46 24 46 11.8 36.2 2 24 2z"/></svg>`, available: true, scopes: [{ id: 'read', label: 'Ler repositórios', description: 'Visualizar repos e issues' }, { id: 'write', label: 'Criar issues/PRs', description: 'Criar issues e pull requests' }] },
+      { id: 'spotify', name: 'Spotify', description: 'Controle sua música e playlists', logo: `<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#1DB954"/><path fill="#fff" d="M34.4 21.6c-5.6-3.3-14.8-3.6-20.1-2 .9-1.4 3.2-2.1 3.2-2.1 5.3-1.6 14.1-.8 19.3 2.3.8.5.3 1.8-.7 1.4-.6-.2-1.1-.5-1.7-.6zm-.8 4.2c-.4-.6-1.2-.4-1.8-.1-4.7 2.9-12.6 3.7-17.3 2.3-1.1-.3-1.5.9-.5 1.4 5 1.5 13.5.8 18.7-2.4.6-.4 1.3-.8.9-1.2zm-2.2 4c-.3-.5-1-.3-1.6 0-4 2.4-11.2 3.1-15.5 1.8-.7-.2-1.1.6-.4 1 4.6 1.4 12.3.8 16.6-1.8.5-.3 1.2-.7.9-1z"/></svg>`, available: false, scopes: [] }
+    ];
+
+    let userToken = null, telegramId = null, connections = {}, currentConnector = null, selectedScopes = [];
+
+    async function init() {
+      const params = new URLSearchParams(window.location.search);
+      userToken = params.get('token');
+      console.log('🔍 Token recebido:', userToken ? `${userToken.substring(0, 30)}...` : 'NENHUM');
+      console.log('🌐 API Base URL:', API_BASE_URL);
+
+      const success = params.get('success'), error = params.get('error'), provider = params.get('provider');
+      if (success === 'true' && provider) { showBanner('success', `✅ ${capitalize(provider)} conectado com sucesso!`); window.history.replaceState({}, '', PANEL_URL); }
+      if (error) { showBanner('error', `❌ Erro ao conectar: ${decodeURIComponent(error)}`); window.history.replaceState({}, '', PANEL_URL); }
+
+      if (!userToken) { document.getElementById('connectorsGrid').style.display = 'none'; document.getElementById('tokenExpired').style.display = 'block'; return; }
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/verify?token=${encodeURIComponent(userToken)}`);
+        const data = await res.json();
+        if (!data.valid) { document.getElementById('connectorsGrid').style.display = 'none'; document.getElementById('tokenExpired').style.display = 'block'; return; }
+        telegramId = data.telegram_id;
+      } catch (e) {
+        console.error('❌ Erro ao verificar token:', e);
+        document.getElementById('connectorsGrid').style.display = 'none';
+        document.getElementById('tokenExpired').style.display = 'block';
+        return;
+      }
+      await loadConnections();
+      renderConnectors();
+    }
+
+    async function loadConnections() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/connections?token=${userToken}`);
+        const data = await res.json();
+        connections = data.integrations || {};
+      } catch (e) { console.error('❌ Erro ao carregar conexões:', e); }    }
+
+    function renderConnectors() {
+      const grid = document.getElementById('connectorsGrid');
+      grid.innerHTML = '';
+      CONNECTORS.forEach(connector => {
+        const isConnected = connections[connector.id]?.connected;
+        const card = document.createElement('div');
+        card.className = `connector-card ${isConnected ? 'connected' : ''} ${!connector.available ? 'coming-soon' : ''}`;
+        card.innerHTML = `
+          <div class="logo">${connector.logo}</div>
+          <h3>${connector.name}</h3>
+          <p>${connector.description}</p>
+          <div class="status ${isConnected ? 'connected' : 'disconnected'}">${isConnected ? '✅ Conectado' : connector.available ? '⬜ Não conectado' : '🔒 Em breve'}</div>
+          <button class="btn ${isConnected ? 'btn-connected' : connector.available ? 'btn-connect' : 'btn-coming-soon'}"
+                  ${!connector.available ? 'disabled' : ''}
+                  onclick="event.stopPropagation(); ${isConnected ? `disconnectConnector('${connector.id}')` : connector.available ? `openModal('${connector.id}')` : ''}">
+            ${isConnected ? '✓ Conectado' : connector.available ? '🔌 Conectar' : '🔒 Em breve'}
+          </button>`;
+        if (connector.available && !isConnected) card.onclick = () => openModal(connector.id);
+        grid.appendChild(card);
+      });
+    }
+
+    function openModal(connectorId) {
+      const connector = CONNECTORS.find(c => c.id === connectorId);
+      if (!connector || !connector.available) return;
+      currentConnector = connector;
+      selectedScopes = connector.scopes.map(s => s.id);
+      document.getElementById('modalTitle').textContent = `Conectar ${connector.name}`;
+      document.getElementById('modalSubtitle').textContent = `Selecione as permissões que deseja conceder`;
+      const list = document.getElementById('permissionList');
+      list.innerHTML = '';
+      connector.scopes.forEach(scope => {
+        const li = document.createElement('li');
+        li.innerHTML = `<input type="checkbox" id="scope-${scope.id}" checked onchange="toggleScope('${scope.id}')"><div class="perm-info"><div class="perm-label">${scope.label}</div><div class="perm-desc">${scope.description}</div></div>`;
+        li.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = li.querySelector('input'); cb.checked = !cb.checked; toggleScope(scope.id); } };
+        list.appendChild(li);
+      });
+      document.getElementById('modalOverlay').classList.add('show');
+    }
+
+    function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); currentConnector = null; selectedScopes = []; }
+    function toggleScope(scopeId) {
+      const cb = document.getElementById(`scope-${scopeId}`);
+      if (cb.checked) { if (!selectedScopes.includes(scopeId)) selectedScopes.push(scopeId); }
+      else { selectedScopes = selectedScopes.filter(s => s !== scopeId); }
+      document.getElementById('btnConfirm').disabled = selectedScopes.length === 0;
+    }
+    async function confirmConnect() {
+      if (!currentConnector || selectedScopes.length === 0) return;
+      const btn = document.getElementById('btnConfirm');
+      btn.disabled = true; btn.innerHTML = '<span class="loading-spinner"></span>Conectando...';
+      try {
+        let url; const apiBody = { token: userToken };
+        if (['gmail', 'drive', 'calendar', 'sheets'].includes(currentConnector.id)) {
+          const services = selectedScopes.length === currentConnector.scopes.length ? ['gmail', 'drive', 'calendar', 'sheets'] : [currentConnector.id];
+          const res = await fetch(`${API_BASE_URL}/api/auth/google/url`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...apiBody, services }) });
+          url = (await res.json()).url;
+        } else if (currentConnector.id === 'notion') {
+          const res = await fetch(`${API_BASE_URL}/api/auth/notion/url`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(apiBody) });
+          url = (await res.json()).url;
+        } else if (currentConnector.id === 'github') {
+          const res = await fetch(`${API_BASE_URL}/api/auth/github/url`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...apiBody, scopes: ['repo', 'read:user', 'notifications'] }) });
+          url = (await res.json()).url;
+        }
+        if (url) window.location.href = url; else throw new Error('URL não gerada');
+      } catch (error) {
+        showBanner('error', `❌ Erro: ${error.message}`);
+        btn.disabled = false; btn.textContent = 'Conectar';
+      }
+    }
+
+    async function disconnectConnector(provider) {
+      if (!confirm(`Deseja realmente desconectar o ${capitalize(provider)}?`)) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: userToken, provider }) });
+        if (res.ok) { showBanner('success', `✅ ${capitalize(provider)} desconectado!`); await loadConnections(); renderConnectors(); }
+        else throw new Error((await res.json()).error || 'Falha');
+      } catch (error) { showBanner('error', `❌ Erro: ${error.message}`); }
+    }
+
+    function showBanner(type, message) {
+      const banner = document.getElementById('banner');
+      banner.className = `banner show ${type}`; banner.textContent = message;
+      setTimeout(() => banner.classList.remove('show'), 5000);
+    }
+    function capitalize(str) { return str.charAt(0).toUpperCase() + str.slice(1); }
+    init();
+  </script>
+</body>
+</html>
