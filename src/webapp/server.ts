@@ -21,6 +21,7 @@ import {
 } from '../integrations/github.js';
 import { getAllIntegrations } from '../db/firebase.js';
 import { verifyUserToken } from '../commands/connect.js';
+import { getPermissionScopes } from '../db/permissions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -115,11 +116,14 @@ app.get('/api/connections', async (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/google/url', async (req: Request, res: Response) => {
-  const { token, services } = req.body;
+  const { token, services, scopes } = req.body;
   const decoded = verifyUserToken(token || '');
   if (!decoded) return res.status(401).json({ error: 'Token inválido' });
   try {
-    res.json({ url: generateGoogleAuthUrl(services || [], decoded.telegram_id) });
+    // Mapeia permissões granulares para escopos OAuth reais
+    const selectedScopes = scopes || services || [];
+    const oauthScopes = getPermissionScopes('google', selectedScopes);
+    res.json({ url: generateGoogleAuthUrl(services || [], decoded.telegram_id, oauthScopes) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -159,11 +163,14 @@ app.get('/oauth/google/callback', async (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/notion/url', async (req: Request, res: Response) => {
-  const { token } = req.body;
+  const { token, scopes } = req.body;
   const decoded = verifyUserToken(token || '');
   if (!decoded) return res.status(401).json({ error: 'Token inválido' });
   try {
-    res.json({ url: generateNotionAuthUrl(decoded.telegram_id) });
+    // Mapeia permissões granulares para escopos OAuth reais do Notion
+    const selectedScopes = scopes || [];
+    const oauthScopes = getPermissionScopes('notion', selectedScopes);
+    res.json({ url: generateNotionAuthUrl(decoded.telegram_id, oauthScopes) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -207,7 +214,10 @@ app.post('/api/auth/github/url', async (req: Request, res: Response) => {
   const decoded = verifyUserToken(token || '');
   if (!decoded) return res.status(401).json({ error: 'Token inválido' });
   try {
-    res.json({ url: generateGitHubAuthUrl(decoded.telegram_id, scopes) });
+    // Mapeia permissões granulares para escopos OAuth reais do GitHub
+    const selectedScopes = scopes || [];
+    const oauthScopes = getPermissionScopes('github', selectedScopes);
+    res.json({ url: generateGitHubAuthUrl(decoded.telegram_id, oauthScopes) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

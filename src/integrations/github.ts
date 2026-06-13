@@ -16,11 +16,11 @@ const GITHUB_API_BASE = 'https://api.github.com';
 // ── OAuth2 ─────────────────────────────────────────────────
 
 /**
- * Gera URL de autorização GitHub
+ * Gera URL de autorizacao GitHub
  */
 export function generateGitHubAuthUrl(
   telegramId: number,
-  scopes: string[] = ['repo', 'read:user', 'notifications']
+  scopes?: string[]
 ): string {
   const state = Buffer.from(
     JSON.stringify({ 
@@ -30,10 +30,13 @@ export function generateGitHubAuthUrl(
     })
   ).toString('base64url');
 
+  // Se escopos nao foram fornecidos, usa os padrao
+  const finalScopes = scopes && scopes.length > 0 ? scopes : ['repo', 'read:user', 'notifications'];
+
   const params = new URLSearchParams({
     client_id: process.env.GITHUB_CLIENT_ID!,
     redirect_uri: process.env.GITHUB_REDIRECT_URI!,
-    scope: scopes.join(' '),
+    scope: finalScopes.join(' '),
     state,
   });
 

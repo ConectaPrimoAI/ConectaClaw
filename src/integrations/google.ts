@@ -23,28 +23,36 @@ function createOAuth2Client() {
 
 export function generateGoogleAuthUrl(
   services: string[],
-  telegramId: number
+  telegramId: number,
+  oauthScopes?: string[]
 ): string {
   const oauth2Client = createOAuth2Client();
-  const scopes: string[] = [];
+  let scopes: string[] = [];
 
-  for (const service of services) {
-    const key = service as keyof typeof GOOGLE_SCOPES;
-    if (GOOGLE_SCOPES[key]) {
-      scopes.push(...GOOGLE_SCOPES[key]);
+  // Se escopos OAuth reais foram fornecidos, usa-os diretamente
+  if (oauthScopes && oauthScopes.length > 0) {
+    scopes = oauthScopes;
+  } else {
+    // Fallback: mapeia services para escopos
+    for (const service of services) {
+      const key = service as keyof typeof GOOGLE_SCOPES;
+      if (GOOGLE_SCOPES[key]) {
+        scopes.push(...GOOGLE_SCOPES[key]);
+      }
+    }
+
+    // Se ainda nao houver escopos, usa todos os padrao
+    if (scopes.length === 0) {
+      scopes.push(
+        ...GOOGLE_SCOPES.gmail,
+        ...GOOGLE_SCOPES.drive,
+        ...GOOGLE_SCOPES.calendar,
+        ...GOOGLE_SCOPES.sheets
+      );
     }
   }
 
-  if (scopes.length === 0) {
-    scopes.push(
-      ...GOOGLE_SCOPES.gmail,
-      ...GOOGLE_SCOPES.drive,
-      ...GOOGLE_SCOPES.calendar,
-      ...GOOGLE_SCOPES.sheets
-    );
-  }
-
-  // Adicionando um salt básico para evitar manipulação simples do state
+  // Adicionando um salt basico para evitar manipulacao simples do state
   const state = Buffer.from(
     JSON.stringify({ 
       telegram_id: telegramId, 

@@ -17,9 +17,9 @@ const NOTION_VERSION = '2022-06-28';
 // ── OAuth2 ─────────────────────────────────────────────────
 
 /**
- * Gera URL de autorização Notion
+ * Gera URL de autorizacao Notion
  */
-export function generateNotionAuthUrl(telegramId: number): string {
+export function generateNotionAuthUrl(telegramId: number, oauthScopes?: string[]): string {
   const state = Buffer.from(
     JSON.stringify({ 
       telegram_id: telegramId, 
@@ -35,6 +35,11 @@ export function generateNotionAuthUrl(telegramId: number): string {
     owner: 'user',
     state,
   });
+
+  // Se escopos foram fornecidos, adiciona-os aos parametros
+  if (oauthScopes && oauthScopes.length > 0) {
+    params.append('scopes', oauthScopes.join(','));
+  }
 
   return `https://api.notion.com/v1/oauth/authorize?${params.toString()}`;
 }

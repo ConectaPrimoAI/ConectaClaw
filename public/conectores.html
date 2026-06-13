@@ -1117,35 +1117,29 @@
 
     // Gerenciador Inteligente para Selecionar/Deselecionar tudo de forma global
     function toggleSelectAll() {
-      const currentTabGroup = document.querySelector('.permission-tab.active').textContent;
-      const visibleScopes = currentConnector.scopes.filter(s => s.group === currentTabGroup);
-      const allSelected = visibleScopes.every(s => selectedScopes.includes(s.id));
+      // Verifica se TODAS as permissões disponíveis estão selecionadas
+      const allScopes = currentConnector.scopes;
+      const allSelected = allScopes.every(s => selectedScopes.includes(s.id));
 
       if (allSelected) {
-        // Se todos da aba atual estiverem ativos, remove todos eles
-        visibleScopes.forEach(s => {
-          const idx = selectedScopes.indexOf(s.id);
-          if (idx > -1) selectedScopes.splice(idx, 1);
-        });
+        // Se todos estiverem selecionados, limpa tudo
+        selectedScopes = [];
       } else {
-        // Caso contrário, garante que todos da aba atual fiquem ativos
-        visibleScopes.forEach(s => {
-          if (!selectedScopes.includes(s.id)) {
-            selectedScopes.push(s.id);
-          }
-        });
+        // Caso contrário, seleciona TODAS as permissões disponíveis
+        selectedScopes = allScopes.map(s => s.id);
       }
 
-      renderPermissions(currentTabGroup);
+      const currentTabGroup = document.querySelector('.permission-tab.active')?.textContent;
+      if (currentTabGroup) {
+        renderPermissions(currentTabGroup);
+      }
       updateSelectAllButtonText();
     }
 
     function updateSelectAllButtonText() {
-      const currentTabGroup = document.querySelector('.permission-tab.active')?.textContent;
-      if (!currentTabGroup) return;
-
-      const visibleScopes = currentConnector.scopes.filter(s => s.group === currentTabGroup);
-      const allSelected = visibleScopes.every(s => selectedScopes.includes(s.id));
+      // Verifica o estado de TODAS as permissoes disponiveis, nao apenas da aba atual
+      const allScopes = currentConnector.scopes;
+      const allSelected = allScopes.every(s => selectedScopes.includes(s.id));
       
       const btn = document.getElementById('btnSelectAll');
       if (allSelected) {
