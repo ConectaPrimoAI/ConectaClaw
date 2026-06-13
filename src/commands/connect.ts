@@ -7,9 +7,8 @@ import { Context } from 'telegraf';
 import jwt from 'jsonwebtoken';
 import { getAllIntegrations } from '../db/firebase.js';
 
-// Garantir que a secret seja consistente
 const JWT_SECRET = process.env.JWT_SECRET || 'conectaclaw_secret_2026_x9f2m7p4q8r1w5e6';
-const JWT_EXPIRY = '30m'; // Aumentei para 30 minutos
+const JWT_EXPIRY = '30m';
 
 export function generateUserToken(telegramId: number): string {
   const now = Math.floor(Date.now() / 1000);
@@ -27,7 +26,7 @@ export function generateUserToken(telegramId: number): string {
 export function verifyUserToken(token: string): { telegram_id: number } | null {
   try {
     const decoded = jwt.verify(token, JWT_SECRET, {
-      clockTolerance: 60, // Tolerância de 60 segundos para dessincronização de relógio
+      clockTolerance: 60,
     }) as any;
     return { telegram_id: decoded.telegram_id };
   } catch (error: any) {
