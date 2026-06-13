@@ -18,7 +18,6 @@ interface IntentResult {
   params: Record<string, any>;
 }
 
-// Define as ferramentas disponíveis
 const tools = [
   {
     type: 'function',
@@ -102,12 +101,9 @@ const tools = [
   }
 ];
 
-/**
- * Detecta intenção do usuário usando Groq function calling
- */
-export async function detectIntent(userId: number, message: string): Promise<IntentResult | null> {
+export async function detectIntent(userId: number, userMessage: string): Promise<IntentResult | null> {
   try {
-    const completion = await groq.chat.completions.create({
+    const completion: any = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
         {
@@ -117,17 +113,17 @@ Analise a mensagem e determine se o usuário quer executar alguma ação especí
 Se a mensagem indicar uma ação clara (enviar email, ver agenda, listar arquivos, etc), retorne a função apropriada.
 Se for apenas uma conversa geral, retorne null.`
         },
-        { role: 'user', content: message }
+        { role: 'user', content: userMessage }
       ],
       tools: tools as any,
       tool_choice: 'auto',
       temperature: 0.3
     });
 
-    const message = completion.choices[0].message;
+    const responseMessage = completion.choices[0].message;
     
-    if (message.tool_calls && message.tool_calls.length > 0) {
-      const toolCall = message.tool_calls[0];
+    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+      const toolCall = responseMessage.tool_calls[0];
       const args = JSON.parse(toolCall.function.arguments);
       
       return {
@@ -144,9 +140,6 @@ Se for apenas uma conversa geral, retorne null.`
   }
 }
 
-/**
- * Executa a ação baseada na intenção detectada
- */
 export async function executeIntent(ctx: Context, intent: IntentResult): Promise<string> {
   const userId = ctx.from!.id;
 
