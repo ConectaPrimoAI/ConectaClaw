@@ -54,9 +54,6 @@ try {
 
 // ── CRUD ───────────────────────────────────────────────────
 
-/**
- * Salva/atualiza uma integração para um usuário
- */
 export async function saveIntegration(
   telegramId: number,
   provider: string,
@@ -87,9 +84,6 @@ export async function saveIntegration(
   }
 }
 
-/**
- * Busca uma integração específica de um usuário
- */
 export async function getIntegration(
   telegramId: number,
   provider: string
@@ -107,9 +101,6 @@ export async function getIntegration(
   }
 }
 
-/**
- * Busca todas as integrações de um usuário
- */
 export async function getAllIntegrations(
   telegramId: number
 ): Promise<Record<string, IntegrationData>> {
@@ -126,9 +117,6 @@ export async function getAllIntegrations(
   }
 }
 
-/**
- * Remove uma integração específica
- */
 export async function removeIntegration(
   telegramId: number,
   provider: string
@@ -146,9 +134,6 @@ export async function removeIntegration(
   }
 }
 
-/**
- * Atualiza tokens de uma integração (para refresh)
- */
 export async function updateTokens(
   telegramId: number,
   provider: string,
@@ -178,9 +163,6 @@ export async function updateTokens(
   }
 }
 
-/**
- * Salva informações do usuário (username, nome)
- */
 export async function saveUserInfo(
   telegramId: number,
   username?: string,
@@ -204,9 +186,6 @@ export async function saveUserInfo(
   }
 }
 
-/**
- * Verifica se o usuário tem uma integração ativa
- */
 export async function hasIntegration(
   telegramId: number,
   provider: string
