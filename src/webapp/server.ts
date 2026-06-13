@@ -115,18 +115,37 @@ app.get('/api/connections', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/auth/google/url', async (req: Request, res: Response) => {
+// Handler unificado para Google (Gmail, Drive, Calendar, Sheets)
+const googleAuthHandler = async (req: Request, res: Response) => {
   const { token, services, scopes } = req.body;
+  const provider = req.params.provider || 'google';
   const decoded = verifyUserToken(token || '');
   if (!decoded) return res.status(401).json({ error: 'Token inválido' });
   try {
     // Mapeia permissões granulares para escopos OAuth reais
+    // Se o provider for um dos serviços Google, usamos ele para buscar os escopos
+    const scopeProvider = ['gmail', 'drive', 'calendar', 'sheets'].includes(provider) ? provider : 'google';
     const selectedScopes = scopes || services || [];
-    const oauthScopes = getPermissionScopes('google', selectedScopes);
-    res.json({ url: generateGoogleAuthUrl(services || [], decoded.telegram_id, oauthScopes) });
+    const oauthScopes = getPermissionScopes(scopeProvider, selectedScopes);
+    
+    // Para o Google, sempre enviamos o serviço atual na lista de services se não estiver lá
+    const finalServices = services || [];
+    if (['gmail', 'drive', 'calendar', 'sheets'].includes(provider) && !finalServices.includes(provider)) {
+      finalServices.push(provider);
+    }
+
+    res.json({ url: generateGoogleAuthUrl(finalServices, decoded.telegram_id, oauthScopes) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+};
+
+app.post('/api/auth/:provider/url', async (req, res, next) => {
+  const provider = req.params.provider;
+  if (['google', 'gmail', 'drive', 'calendar', 'sheets'].includes(provider)) {
+    return googleAuthHandler(req, res);
+  }
+  next();
 });
 
 app.get('/oauth/google/callback', async (req: Request, res: Response) => {
@@ -167,7 +186,6 @@ app.post('/api/auth/notion/url', async (req: Request, res: Response) => {
   const decoded = verifyUserToken(token || '');
   if (!decoded) return res.status(401).json({ error: 'Token inválido' });
   try {
-    // Mapeia permissões granulares para escopos OAuth reais do Notion
     const selectedScopes = scopes || [];
     const oauthScopes = getPermissionScopes('notion', selectedScopes);
     res.json({ url: generateNotionAuthUrl(decoded.telegram_id, oauthScopes) });
@@ -214,7 +232,6 @@ app.post('/api/auth/github/url', async (req: Request, res: Response) => {
   const decoded = verifyUserToken(token || '');
   if (!decoded) return res.status(401).json({ error: 'Token inválido' });
   try {
-    // Mapeia permissões granulares para escopos OAuth reais do GitHub
     const selectedScopes = scopes || [];
     const oauthScopes = getPermissionScopes('github', selectedScopes);
     res.json({ url: generateGitHubAuthUrl(decoded.telegram_id, oauthScopes) });

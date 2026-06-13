@@ -1163,11 +1163,23 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: userToken, services: selectedScopes, scopes: selectedScopes })
         });
+        
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || `Erro do servidor: ${res.status}`);
+        }
+
         const data = await res.json();
-        if (data.url) { window.location.href = data.url; }
-        else { showBanner('error', 'Incapaz de gerar o link seguro de autorização.'); btn.disabled = false; btn.innerHTML = 'Autorizar'; }
+        if (data.url) { 
+          window.location.href = data.url; 
+        } else { 
+          showBanner('error', 'Incapaz de gerar o link seguro de autorização.'); 
+          btn.disabled = false; 
+          btn.innerHTML = 'Autorizar'; 
+        }
       } catch (e) {
-        showBanner('error', 'Ocorreu um erro no handshake de dados de segurança.');
+        console.error('Erro no handshake:', e);
+        showBanner('error', `Ocorreu um erro no handshake de dados de segurança: ${e.message}`);
         btn.disabled = false;
         btn.innerHTML = 'Autorizar';
       }
