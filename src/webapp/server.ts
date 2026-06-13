@@ -118,7 +118,8 @@ app.get('/api/connections', async (req: Request, res: Response) => {
 // Handler unificado para Google (Gmail, Drive, Calendar, Sheets)
 const googleAuthHandler = async (req: Request, res: Response) => {
   const { token, services, scopes } = req.body;
-  const provider = req.params.provider || 'google';
+  // Força o provider a ser uma string para evitar erro TS2345 (string | string[])
+  const provider = String(req.params.provider || 'google');
   const decoded = verifyUserToken(token || '');
   if (!decoded) return res.status(401).json({ error: 'Token inválido' });
   try {
@@ -141,7 +142,7 @@ const googleAuthHandler = async (req: Request, res: Response) => {
 };
 
 app.post('/api/auth/:provider/url', async (req, res, next) => {
-  const provider = req.params.provider;
+  const provider = String(req.params.provider);
   if (['google', 'gmail', 'drive', 'calendar', 'sheets'].includes(provider)) {
     return googleAuthHandler(req, res);
   }
