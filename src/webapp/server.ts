@@ -26,7 +26,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app: Express = express();
-const PORT = parseInt(process.env.WEBAPP_PORT || '3001');
+// No Render, PORT é a porta pública.
+const PORT = parseInt(process.env.PORT || process.env.WEBAPP_PORT || '3001');
 
 app.use(cors());
 app.use(express.json());
@@ -37,41 +38,26 @@ app.use(express.urlencoded({ extended: true }));
 // ═══════════════════════════════════════════════════════════
 
 const publicDir = path.join(process.cwd(), 'public');
-console.log(`📁 Public dir: ${publicDir}`);
-console.log(`📁 Existe? ${fs.existsSync(publicDir)}`);
 
-if (fs.existsSync(publicDir)) {
-  const files = fs.readdirSync(publicDir);
-  console.log(`📂 Arquivos em public/: ${files.join(', ')}`);
-  app.use(express.static(publicDir));
-} else {
-  console.error('❌ ERRO: Pasta public/ não encontrada!');
-}
 // ═══════════════════════════════════════════════════════════
-// ROTA EXPLÍCITA PARA CONECTORES.HTML
+// ROTA EXPLÍCITA PARA CONECTORES.HTML E REDIRECTS
 // ═══════════════════════════════════════════════════════════
 
 app.get('/conectores.html', (req: Request, res: Response) => {
   const filePath = path.join(publicDir, 'conectores.html');
-  console.log(`🔍 Procurando: ${filePath}`);
-  console.log(`🔍 Existe? ${fs.existsSync(filePath)}`);
-  
   if (fs.existsSync(filePath)) {
-    console.log(`✅ Servindo conectores.html`);
     res.sendFile(filePath);
   } else {
-    console.error(`❌ Arquivo não encontrado: ${filePath}`);
-    res.status(404).send(`
-      <h1>❌ Arquivo não encontrado</h1>
-      <p>Caminho: ${filePath}</p>
-      <p>Existe? ${fs.existsSync(filePath)}</p>
-    `);
+    res.status(404).send('<h1>❌ Arquivo conectores.html não encontrado</h1>');
   }
 });
 
 app.get('/', (req: Request, res: Response) => {
   res.redirect('/conectores.html');
 });
+
+// Servir outros estáticos da pasta public
+app.use(express.static(publicDir));
 
 // ═══════════════════════════════════════════════════════════
 // API ROUTES
@@ -81,8 +67,7 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ 
     status: 'ok', 
     service: 'ConectaClaw',
-    timestamp: Date.now(),
-    publicDir: publicDir || 'não encontrado'
+    timestamp: Date.now()
   });
 });
 
@@ -96,7 +81,8 @@ app.get('/api/verify', (req: Request, res: Response) => {
   }
 
   const decoded = verifyUserToken(tokenToVerify);
-  if (!decoded) {    return res.status(401).json({ error: 'Token inválido ou expirado' });
+  if (!decoded) {
+    return res.status(401).json({ error: 'Token inválido ou expirado' });
   }
 
   res.json({ valid: true, telegram_id: decoded.telegram_id });
@@ -136,7 +122,9 @@ app.post('/api/auth/google/url', async (req: Request, res: Response) => {
 
 app.get('/oauth/google/callback', async (req: Request, res: Response) => {
   const { code, state, error } = req.query;
-  if (error) return res.redirect(`https://conectaclaw.onrender.com/conectores.html?error=${encodeURIComponent(String(error))}&provider=google`);
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  
+  if (error) return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(String(error))}&provider=google`);
   if (!code || !state) return res.status(400).send('Código ou state ausente');
 
   try {
@@ -144,9 +132,10 @@ app.get('/oauth/google/callback', async (req: Request, res: Response) => {
     const tokens = await exchangeGoogleCode(String(code));
     await saveGoogleConnection(stateData.telegram_id, tokens, stateData.services);
     notifyTelegram(stateData.telegram_id, stateData.services);
-    res.redirect(`https://conectaclaw.onrender.com/conectores.html?success=true&provider=google&services=${stateData.services.join(',')}`);
-  } catch (error: any) {    console.error('Erro no callback Google:', error);
-    res.redirect(`https://conectaclaw.onrender.com/conectores.html?error=${encodeURIComponent(error.message)}&provider=google`);
+    res.redirect(`${baseUrl}/conectores.html?success=true&provider=google&services=${stateData.services.join(',')}`);
+  } catch (error: any) {
+    console.error('Erro no callback Google:', error);
+    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(error.message)}&provider=google`);
   }
 });
 
@@ -163,7 +152,9 @@ app.post('/api/auth/notion/url', async (req: Request, res: Response) => {
 
 app.get('/oauth/notion/callback', async (req: Request, res: Response) => {
   const { code, state, error } = req.query;
-  if (error) return res.redirect(`https://conectaclaw.onrender.com/conectores.html?error=${encodeURIComponent(String(error))}&provider=notion`);
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+  if (error) return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(String(error))}&provider=notion`);
   if (!code || !state) return res.status(400).send('Código ou state ausente');
 
   try {
@@ -171,10 +162,10 @@ app.get('/oauth/notion/callback', async (req: Request, res: Response) => {
     const tokenData = await exchangeNotionCode(String(code));
     await saveNotionConnection(stateData.telegram_id, tokenData);
     notifyTelegram(stateData.telegram_id, ['notion']);
-    res.redirect(`https://conectaclaw.onrender.com/conectores.html?success=true&provider=notion`);
+    res.redirect(`${baseUrl}/conectores.html?success=true&provider=notion`);
   } catch (error: any) {
     console.error('Erro no callback Notion:', error);
-    res.redirect(`https://conectaclaw.onrender.com/conectores.html?error=${encodeURIComponent(error.message)}&provider=notion`);
+    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(error.message)}&provider=notion`);
   }
 });
 
@@ -191,17 +182,20 @@ app.post('/api/auth/github/url', async (req: Request, res: Response) => {
 
 app.get('/oauth/github/callback', async (req: Request, res: Response) => {
   const { code, state, error } = req.query;
-  if (error) return res.redirect(`https://conectaclaw.onrender.com/conectores.html?error=${encodeURIComponent(String(error))}&provider=github`);
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+  if (error) return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(String(error))}&provider=github`);
   if (!code || !state) return res.status(400).send('Código ou state ausente');
 
-  try {    const stateData = resolveGitHubState(String(state));
+  try {
+    const stateData = resolveGitHubState(String(state));
     const tokenData = await exchangeGitHubCode(String(code));
     await saveGitHubConnection(stateData.telegram_id, tokenData);
     notifyTelegram(stateData.telegram_id, ['github']);
-    res.redirect(`https://conectaclaw.onrender.com/conectores.html?success=true&provider=github`);
+    res.redirect(`${baseUrl}/conectores.html?success=true&provider=github`);
   } catch (error: any) {
     console.error('Erro no callback GitHub:', error);
-    res.redirect(`https://conectaclaw.onrender.com/conectores.html?error=${encodeURIComponent(error.message)}&provider=github`);
+    res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(error.message)}&provider=github`);
   }
 });
 
@@ -243,10 +237,11 @@ async function notifyTelegram(telegramId: number, services: string[]) {
 // INICIAR SERVIDOR
 // ═══════════════════════════════════════════════════════════
 
-export function startWebApp(): void {  app.listen(PORT, () => {
+export function startWebApp(): any {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌐 WebApp rodando na porta ${PORT}`);
-    console.log(`   Painel: https://conectaclaw.onrender.com/conectores.html`);
   });
+  return server;
 }
 
 export { app };

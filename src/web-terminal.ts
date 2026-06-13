@@ -1,16 +1,4 @@
-import express, { Express, Request, Response } from 'express';
-
-const app: Express = express();
-
-// CORREÇÃO: prioriza PORT (que o Render injeta) e cai pro WEB_TERMINAL_PORT como fallback.
-// Se nenhum estiver setado, usa 10000 (padrão do Render).
-const PORT = parseInt(
-  process.env.PORT ?? process.env.WEB_TERMINAL_PORT ?? '10000',
-  10
-);
-
-// CRÍTICO pro Render: bindar em 0.0.0.0, não localhost.
-const HOST = '0.0.0.0';
+import express, { Express, Request, Response, Router } from 'express';
 
 let botLogs: string[] = [];
 const MAX_LOGS = 500;
@@ -25,15 +13,15 @@ export function addLog(message: string) {
   console.log(logEntry);
 }
 
-app.use(express.json());
+const terminalRouter = Router();
 
-app.get('/', (req: Request, res: Response) => {
+terminalRouter.get('/', (req: Request, res: Response) => {
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Conecta Claw🦞 V20.0 - Web Terminal</title>
+  <title>Conecta Claw🦞 V23.0 - Web Terminal</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Courier New', monospace; background: #0a0e27; color: #00ff00; overflow: hidden; height: 100vh; }
@@ -57,7 +45,7 @@ app.get('/', (req: Request, res: Response) => {
 <body>
   <div class="container">
     <div class="header">
-      <h1>🤖 Conecta Claw🦞 V20.0 - Web Terminal</h1>
+      <h1>🤖 Conecta Claw🦞 V23.0 - Web Terminal</h1>
       <div class="status">
         <div class="status-item"><div class="status-dot"></div><span>Status: <strong>ONLINE</strong></span></div>
         <div class="status-item"><span>Logs: <strong id="log-count">0</strong></span></div>
@@ -68,7 +56,7 @@ app.get('/', (req: Request, res: Response) => {
       <div class="log-entry success">🚀 Conecta Claw🦞 Web Terminal iniciado...</div>
     </div>
     <div class="footer">
-      <div>Conecta Claw🦞 V20.0 | Tempo real</div>
+      <div>Conecta Claw🦞 V23.0 | Tempo real</div>
       <div style="display:flex;gap:10px">
         <button onclick="clearLogs()">Limpar</button>
         <button onclick="scrollToBottom()">↓ Final</button>
@@ -83,7 +71,7 @@ app.get('/', (req: Request, res: Response) => {
     let lastCount = 0;
 
     setInterval(() => {
-      fetch('/api/logs').then(r => r.json()).then(data => {
+      fetch('/terminal/api/logs').then(r => r.json()).then(data => {
         if (data.logs.length === lastCount) return;
         lastCount = data.logs.length;
         const wasAtBottom = terminal.scrollHeight - terminal.clientHeight <= terminal.scrollTop + 50;
@@ -105,7 +93,7 @@ app.get('/', (req: Request, res: Response) => {
       uptime.textContent = Math.floor((Date.now() - startTime) / 1000) + 's';
     }, 1000);
 
-    function clearLogs() { fetch('/api/logs/clear', { method: 'POST' }).catch(() => {}); }
+    function clearLogs() { fetch('/terminal/api/logs/clear', { method: 'POST' }).catch(() => {}); }
     function scrollToBottom() { terminal.scrollTop = terminal.scrollHeight; }
   </script>
 </body>
@@ -113,24 +101,21 @@ app.get('/', (req: Request, res: Response) => {
   res.send(html);
 });
 
-app.get('/api/logs', (req: Request, res: Response) => { res.json({ logs: botLogs }); });
-app.post('/api/logs/clear', (req: Request, res: Response) => { botLogs = []; res.json({ success: true }); });
+terminalRouter.get('/api/logs', (req: Request, res: Response) => { res.json({ logs: botLogs }); });
+terminalRouter.post('/api/logs/clear', (req: Request, res: Response) => { botLogs = []; res.json({ success: true }); });
 
-export function startWebTerminal() {
-  const server = app.listen(PORT, HOST, () => {
-    console.log(`🌐 Web Terminal rodando em http://${HOST}:${PORT}`);
-  });
-
-  server.on('error', (err: any) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`⚠️ Porta ${PORT} em uso. Tentando ${PORT + 1}...`);
-      app.listen(PORT + 1, HOST, () => {
-        console.log(`🌐 Web Terminal rodando em http://${HOST}:${PORT + 1}`);
-      });
-    } else {
-      console.error(`❌ Erro crítico ao iniciar Web Terminal: ${err.message}`);
-    }
-  });
-
-  return server;
+export function startWebTerminal(app?: Express) {
+  if (app) {
+    // Se passarmos o app, montamos o terminal em uma rota específica
+    app.use('/terminal', terminalRouter);
+    console.log('📟 Web Terminal montado em /terminal');
+  } else {
+    // Fallback para comportamento original se necessário (não recomendado no Render)
+    const standaloneApp = express();
+    standaloneApp.use('/', terminalRouter);
+    const PORT = process.env.PORT || '10000';
+    standaloneApp.listen(PORT, () => {
+      console.log(`🌐 Web Terminal standalone rodando na porta ${PORT}`);
+    });
+  }
 }

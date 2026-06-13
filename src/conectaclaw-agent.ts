@@ -435,12 +435,14 @@ bot.on('text', async (ctx) => {
 // INICIALIZAÇÃO
 // ═══════════════════════════════════════════════════════════
 
-// Iniciar WebApp (servidor Express para OAuth callbacks)
+// Iniciar WebApp (servidor Express para OAuth callbacks e Painel)
+import { app as webApp } from './webapp/server.js';
 startWebApp();
-console.log('🌐 WebApp iniciado na porta 3001');
+
+// Montar o Web Terminal no mesmo servidor para evitar conflito de portas no Render
+startWebTerminal(webApp);
 
 // Iniciar serviços originais
-startWebTerminal();
 startReminderManager(bot);
 
 // Launch bot

@@ -42,8 +42,9 @@ export async function handleConectar(ctx: Context): Promise<void> {
     const firstName = ctx.from!.first_name || 'amigo';
 
     const token = generateUserToken(telegramId);
-    // ✅ Aponta diretamente para o domínio do Render
-    const panelUrl = `https://conectaclaw.onrender.com/conectores.html?token=${token}`;
+    // ✅ Usa o domínio configurado ou fallback para o Render
+    const baseUrl = process.env.WEBAPP_URL || 'https://conectaclaw.onrender.com';
+    const panelUrl = `${baseUrl}/conectores.html?token=${token}`;
 
     console.log(`🔗 Token gerado para ${telegramId} (válido por ${JWT_EXPIRY})`);
 
