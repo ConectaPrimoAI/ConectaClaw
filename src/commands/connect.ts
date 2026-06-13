@@ -4,6 +4,7 @@
  */
 
 import { Context } from 'telegraf';
+import { Markup } from 'telegraf';
 import jwt from 'jsonwebtoken';
 import { getAllIntegrations } from '../db/firebase.js';
 
@@ -46,8 +47,7 @@ export async function handleConectar(ctx: Context): Promise<void> {
     console.log(`🔗 Token gerado para ${telegramId} (válido por ${JWT_EXPIRY})`);
 
     let statusText = '';
-    try {
-      const integrations = await getAllIntegrations(telegramId);
+    try {      const integrations = await getAllIntegrations(telegramId);
       const connectedList = Object.keys(integrations);
 
       if (connectedList.length > 0) {
@@ -61,19 +61,18 @@ export async function handleConectar(ctx: Context): Promise<void> {
       console.warn('⚠️ Falha ao buscar integrações:', dbError.message);
     }
 
+    const message = `🦞 E aí, ${firstName}! Vou te conectar às suas ferramentas favoritas.\n\n` +
+      `Clica no botão abaixo pra abrir o painel de conectores. Lá você escolhe o que liberar e conecta em segundos.\n\n` +
+      `🔒 *Seguro:* Seus tokens ficam criptografados e você pode desconectar quando quiser.\n` +
+      `⏰ *Validade:* 30 minutos${statusText}`;
+
+    // Usa Markup do Telegraf para criar os botões corretamente
     await ctx.reply(
-      `🦞 E aí, ${firstName}! Vou te conectar às suas ferramentas favoritas.\n\n` +
-        `Clica no botão abaixo pra abrir o painel de conectores. Lá você escolhe o que liberar e conecta em segundos.\n\n` +
-        `🔒 ATENÇÃO: Ao conectar um serviço, você autoriza o acesso necessário para a integração. O ConectaClaw não se responsabiliza por falhas ou problemas de serviços de terceiros. .\n` +
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '🔌 Abrir Painel de Conectores', web_app: { url: panelUrl } }],
-            [{ text: '🔗 Abrir no navegador', url: panelUrl }],
-          ],
-        },
-      }
+      message,
+      Markup.inlineKeyboard([
+        Markup.button.webApp('🔌 Abrir Painel de Conectores', panelUrl),
+        Markup.button.url('🔗 Abrir no navegador', panelUrl)
+      ]).reply_markup()
     );
   } catch (error: any) {
     console.error('❌ Erro CRÍTICO no handleConectar:', error);
@@ -97,8 +96,7 @@ export async function handleIntegrationsStatus(ctx: Context): Promise<void> {
   }
   message += '\n💡 Use /conectar para gerenciar suas integrações.';
 
-  await ctx.reply(message, { parse_mode: 'Markdown' });
-}
+  await ctx.reply(message, { parse_mode: 'Markdown' });}
 
 export async function handleDisconnect(ctx: Context): Promise<void> {
   const text = (ctx.message && 'text' in ctx.message) ? ctx.message.text : '';
