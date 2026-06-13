@@ -1,11 +1,9 @@
 /**
  * conectaclaw-agent.ts v23.0
- * Orquestrador principal com lógica de intenção, áudio, vídeo e imagem via Replicate
- * + Integrações OAuth2 (Gmail, Drive, Calendar, Sheets, Notion, GitHub)
+ * Orquestrador principal com lógica de intenção, áudio e integrações OAuth2
  */
 import { Telegraf, Context } from 'telegraf';
 import Groq from 'groq-sdk';
-import Replicate from 'replicate';
 import axios from 'axios';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -14,7 +12,6 @@ import { startWebTerminal, addLog } from './web-terminal.js';
 import { startReminderManager } from './reminderManager.js';
 import { agentRegistry } from './agents/Agent.js';
 import './agents/index.js';
-import { registry as skillRegistry } from './skills/index.js';
 import { transcribeAudio, synthesizeSpeech } from './agents/VoiceAgent.js';
 import { analyzeImage } from './agents/VisionAgent.js';
 
@@ -39,9 +36,6 @@ if (!process.env.TELEGRAM_TOKEN || !process.env.GROQ_API_KEY) {
 
 export const bot: Telegraf<Context> = new Telegraf(process.env.TELEGRAM_TOKEN);
 export const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const replicate = process.env.REPLICATE_API_TOKEN
-    ? new Replicate({ auth: process.env.REPLICATE_API_TOKEN.trim() })
-    : null;
 
 const TMP_DIR = path.join(os.tmpdir(), 'conectaclaw');
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
@@ -98,35 +92,6 @@ async function createStatusUpdater(ctx: Context, initialText: string) {
     };
 }
 
-// ── Enviar arquivo ─────────────────────────────────────────
-async function sendSkillFile(ctx: Context, result: any): Promise<boolean> {
-    if (!result || !result.file) return false;
-    const filePath = result.file;
-    const type = result.type;
-    const caption = (result.text || '').substring(0, 1024);
-
-    if (!fs.existsSync(filePath)) {
-        addLog(`❌ Arquivo não existe: ${filePath}`);
-        return false;
-    }
-
-    try {
-        if (type === 'photo') {
-            await ctx.replyWithPhoto({ source: filePath } as any, { caption });
-        } else if (type === 'video') {
-            await ctx.replyWithVideo({ source: filePath } as any, { caption, supports_streaming: true });
-        } else if (type === 'voice') {
-            await ctx.replyWithVoice({ source: filePath } as any, { caption });
-        } else {
-            await ctx.replyWithDocument({ source: filePath } as any, { caption });
-        }
-        return true;
-    } catch (e: any) {
-        addLog(`❌ Erro ao enviar arquivo (${type}): ${e.message}`);
-        return false;
-    }
-}
-
 // ── Lógica de Intenção com LLM ──────────────────────────────
 const systemPrompt = `Você é o Conecta Claw🦞, um assistente brasileiro extremamente inteligente, prestativo e com personalidade humana.
 Sua missão é ajudar o usuário da melhor forma possível.
@@ -146,7 +111,8 @@ async function handleIntent(ctx: Context, text: string): Promise<string> {
                 { role: "user", content: text }
             ],
             max_tokens: 1024,
-            temperature: 0.7
+            temperature: 0.7,
+            stream: false
         });
         
         const reply = response.choices[0].message.content || '';
@@ -168,16 +134,95 @@ async function handleIntent(ctx: Context, text: string): Promise<string> {
 // COMANDOS DE INTEGRAÇÃO OAUTH2
 // ═══════════════════════════════════════════════════════════
 
-bot.command('conectar', handleConectar);
-bot.command('integracoes', handleIntegrationsStatus);
-bot.command('desconectar', handleDisconnect);
-bot.command('email', handleEmailCommand);
-bot.command('emails', handleReadEmailsCommand);
-bot.command('agenda', handleAgendaCommand);
-bot.command('arquivos', handleArquivosCommand);
-bot.command('notion', handleNotionCommand);
-bot.command('repo', handleRepoCommand);
-bot.command('issues', handleIssuesCommand);
+bot.command('conectar', async (ctx) => {
+    try {
+        await handleConectar(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro no /conectar: ${error.message}`);
+        await ctx.reply('❌ Erro ao abrir painel de conectores. Tente novamente.');
+    }
+});
+
+bot.command('integracoes', async (ctx) => {
+    try {
+        await handleIntegrationsStatus(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro no /integracoes: ${error.message}`);
+        await ctx.reply('❌ Erro ao verificar integrações.');
+    }
+});
+
+bot.command('desconectar', async (ctx) => {
+    try {
+        await handleDisconnect(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro no /desconectar: ${error.message}`);
+        await ctx.reply('❌ Erro ao desconectar.');
+    }
+});
+
+bot.command('email', async (ctx) => {
+    try {
+        await handleEmailCommand(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro no /email: ${error.message}`);
+        await ctx.reply('❌ Erro ao enviar e-mail.');
+    }
+});
+
+bot.command('emails', async (ctx) => {
+    try {
+        await handleReadEmailsCommand(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro no /emails: ${error.message}`);
+        await ctx.reply('❌ Erro ao ler e-mails.');
+    }
+});
+
+bot.command('agenda', async (ctx) => {
+    try {
+        await handleAgendaCommand(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro na /agenda: ${error.message}`);
+        await ctx.reply('❌ Erro ao verificar agenda.');
+    }
+});
+
+bot.command('arquivos', async (ctx) => {
+    try {
+        await handleArquivosCommand(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro no /arquivos: ${error.message}`);
+        await ctx.reply('❌ Erro ao listar arquivos.');
+    }
+});
+
+bot.command('notion', async (ctx) => {
+    try {
+        await handleNotionCommand(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro no /notion: ${error.message}`);
+        await ctx.reply('❌ Erro ao acessar Notion.');
+    }
+});
+
+bot.command('repo', async (ctx) => {
+    try {
+        await handleRepoCommand(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro no /repo: ${error.message}`);
+        await ctx.reply('❌ Erro ao listar repositórios.');
+    }
+});
+
+bot.command('issues', async (ctx) => {
+    try {
+        await handleIssuesCommand(ctx);
+    } catch (error: any) {
+        addLog(`❌ Erro no /issues: ${error.message}`);
+        await ctx.reply('❌ Erro ao listar issues.');
+    }
+});
 
 // ═══════════════════════════════════════════════════════════
 // COMANDOS ORIGINAIS
@@ -191,9 +236,10 @@ bot.start((ctx) => {
         '   • 💬 Texto\n' +
         '   • 🎤 Áudio / voz \n' +
         '   • 🖼️ Foto (análise com visão)\n' +
-        '   • 🎨 Imagem — Gero imagens profissionais pra você! \n' +
-        '   • 🎬 Video — Gero vídeos surreais\n' +
         '   • 🔌 /conectar — Conecte Gmail, Drive, Notion, GitHub\n' +
+        '   • 📧 /email — Enviar e-mails\n' +
+        '   • 📅 /agenda — Ver sua agenda\n' +
+        '   • 🐙 /repo — Repositórios do GitHub\n' +
         '   • 🗑️ /clear — limpa minha memória'
     );
 });
@@ -213,116 +259,10 @@ bot.command('model', (ctx) => {
         `🧠 *Conecta Claw🦞 — Status*\n\n` +
         `LLM: \`llama-3.3-70b-versatile\` (Groq)\n` +
         `🎤 Áudio: \`whisper-large-v3\` (Groq)\n` +
-        `🔊 TTS: Replicate (Kokoro) + Google (fallback)\n` +
+        `🔊 TTS: Google TTS\n` +
         `👁️ Visão: \`llama-3.2-90b-vision-preview\` (Groq)\n` +
-        `🎨 Imagem: Pollinations (FLUX) + Replicate\n` +
-        `🎬 Vídeo: ${replicate ? 'Replicate (minimax/video-01)' : 'Desabilitado'}\n` +
-        `🔌 Integrações: Gmail, Drive, Calendar, Sheets, Notion, GitHub\n\n` +
-        `${replicate ? '✅' : '⚠️'} Replicate: ${replicate ? 'configurado' : 'não configurado'}`
+        `🔌 Integrações: Gmail, Drive, Calendar, Sheets, Notion, GitHub`
     );
-});
-
-// ── /imagem <prompt> ────────────────────────────────────────
-bot.command('imagem', async (ctx) => {
-    const prompt = ctx.message.text.replace(/^\/imagem\s*/i, '').trim();
-    if (!prompt) {
-        return ctx.reply('🎨 Uso: `/imagem <descrição>`', { parse_mode: 'Markdown' });
-    }
-
-    const status = await createStatusUpdater(ctx, '🎨 Gerando imagem...');
-
-    // Tentativa 1: Pollinations
-    try {
-        const seed = Math.floor(Math.random() * 999999);
-        const encodedPrompt = encodeURIComponent(prompt);
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&enhance=true&model=flux&seed=${seed}`;
-
-        const response = await axios.get(imageUrl, {
-            responseType: 'arraybuffer',
-            timeout: 120000,
-            headers: { 'User-Agent': 'ConectaClaw/23.0' }
-        });
-
-        if (response.data && response.data.byteLength > 1000) {
-            const outPath = path.join(TMP_DIR, `image_${Date.now()}.jpg`);
-            fs.writeFileSync(outPath, Buffer.from(response.data));
-            await status.delete();
-            await ctx.replyWithPhoto(
-                { source: outPath } as any,
-                { caption: `🎨 ${prompt}\n_FLUX (Pollinations)_` }
-            );
-            setTimeout(() => { try { fs.unlinkSync(outPath); } catch {} }, 60_000);
-            return;
-        }
-    } catch (e1: any) {
-        addLog(`⚠️ Pollinations falhou: ${e1.message?.substring(0, 80)}`);
-    }
-
-    // Tentativa 2: Replicate
-    if (replicate) {
-        try {
-            await status.update('⚠️ Tentando Replicate...');
-            const output = await replicate.run(
-                'black-forest-labs/flux-schnell',
-                { input: { prompt, num_inference_steps: 4, aspect_ratio: '1:1', output_format: 'jpg', output_quality: 80 } }
-            ) as any;
-            const imageUrl = Array.isArray(output) ? output[0] : output;
-
-            if (typeof imageUrl === 'string') {
-                await status.delete();
-                await ctx.replyWithPhoto(imageUrl, { caption: `🎨 ${prompt}\n_flux-schnell (Replicate)_` });
-                return;
-            }
-        } catch (e2: any) {
-            addLog(`❌ Replicate imagem: ${e2.message?.substring(0, 80)}`);
-        }
-    }
-
-    await status.delete();
-    ctx.reply('❌ Não consegui gerar a imagem agora.').catch(() => {});
-});
-
-// ── /video <prompt> ─────────────────────────────────────────
-bot.command('video', async (ctx) => {
-    const prompt = ctx.message.text.replace(/^\/video\s*/i, '').trim();
-    if (!prompt) {
-        return ctx.reply('🎬 Uso: `/video <descrição>`', { parse_mode: 'Markdown' });
-    }
-    if (!replicate) {
-        return ctx.reply('⚠️ *Vídeo requer REPLICATE_API_TOKEN.*\nConfigure em .env ou variáveis de ambiente.', { parse_mode: 'Markdown' }).catch(() => {});
-    }
-
-    const status = await createStatusUpdater(ctx, '🎬 Iniciando geração de vídeo...');
-    const startTime = Date.now();
-    let elapsed = 0;
-    const updateTimer = setInterval(async () => {
-        elapsed = Math.floor((Date.now() - startTime) / 1000);
-        const min = Math.floor(elapsed / 60);
-        const sec = elapsed % 60;
-        await status.update(`🎬 Gerando vídeo... ${min}m ${sec}s`);
-    }, 5000);
-
-    try {
-        const output = await replicate.run(
-            'minimax/video-01',
-            { input: { prompt, duration: 5 } }
-        ) as any;
-        clearInterval(updateTimer);
-
-        const videoUrl = Array.isArray(output) ? output[0] : output;
-        const finalUrl = (videoUrl && typeof videoUrl === 'object' && typeof videoUrl.url === 'function') ? videoUrl.url() : videoUrl;
-
-        await status.delete();
-        await ctx.replyWithVideo(finalUrl, {
-            caption: `🎬 ${prompt}`,
-            supports_streaming: true
-        });
-    } catch (e: any) {
-        clearInterval(updateTimer);
-        addLog(`❌ Vídeo erro: ${e.message?.substring(0, 200)}`);
-        await status.delete();
-        ctx.reply(`❌ Erro ao gerar vídeo: ${e.message?.substring(0, 100) || 'desconhecido'}`).catch(() => {});
-    }
 });
 
 // ── /voz <texto> — TTS ──────────────────────────────────────
@@ -458,17 +398,19 @@ bot.on('text', async (ctx) => {
     if (!userId) return;
     const userMessage = ctx.message.text;
 
-    const status = await createStatusUpdater(ctx, '🤔 Pensando...');
+    // Ignorar comandos
+    if (userMessage.startsWith('/')) return;
 
     try {
+        // Enviar ação de digitação imediatamente
+        await ctx.sendChatAction('typing');
+        
         const reply = await handleIntent(ctx, userMessage);
-        await status.delete();
         
         try { await ctx.reply(reply, { parse_mode: 'Markdown' }); }
         catch { await ctx.reply(reply); }
 
     } catch (e: any) {
-        await status.delete();
         addLog(`❌ text handler: ${e.message?.substring(0, 200)}`);
         const code = e?.status ?? e?.response?.status;
         if (code === 429) ctx.reply('⏱️ Muitas mensagens. Espera uns segundos!').catch(() => {});
@@ -487,6 +429,7 @@ bot.on('text', async (ctx) => {
 
 // Iniciar WebApp (servidor Express para OAuth callbacks)
 startWebApp();
+console.log('🌐 WebApp iniciado na porta 3001');
 
 // Iniciar serviços originais
 startWebTerminal();
@@ -496,8 +439,7 @@ startReminderManager(bot);
 bot.launch();
 
 console.log('🚀 Conecta Claw🦞 v23.0 iniciado!');
-console.log(`🎨 Replicate: ${replicate ? '✅ configurado' : '❌ desabilitado'}`);
-console.log('🌐 WebApp: OAuth callbacks ativo');
+console.log('✅ Bot Telegram online');
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
