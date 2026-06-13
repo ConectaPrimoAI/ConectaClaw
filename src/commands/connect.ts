@@ -42,7 +42,7 @@ export async function handleConectar(ctx: Context): Promise<void> {
     const firstName = ctx.from!.first_name || 'amigo';
 
     const token = generateUserToken(telegramId);
-    const panelUrl = `https://conecta-primo-ai.vercel.app/conectores.html?token=${token}`;
+    const panelUrl = `https://conectaclaw.onrender.com/conectores.html?token=${token}`;
 
     console.log(`🔗 Token gerado para ${telegramId} (válido por ${JWT_EXPIRY})`);
 
