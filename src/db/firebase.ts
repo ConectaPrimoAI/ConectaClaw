@@ -26,12 +26,44 @@ export interface UserConnections {
   updatedAt: number;
 }
 
+// ── Função para normalizar a chave privada ─────────────────
+function normalizePrivateKey(key: string | undefined): string | undefined {
+  if (!key) return undefined;
+  
+  // Remove espaços extras no início/fim
+  let normalized = key.trim();
+  
+  // Tenta diferentes formatações
+  // 1. Se já tem \n literais, mantém
+  if (normalized.includes('\\n')) {
+    normalized = normalized.replace(/\\n/g, '\n');
+  }
+  
+  // 2. Se tem quebras de linha reais, mantém
+  // 3. Se está tudo em uma linha, adiciona quebras onde necessário
+  if (!normalized.includes('\n')) {
+    normalized = normalized
+      .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
+      .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----\n')
+      // Adiciona quebras a cada 64 caracteres no meio da chave
+      .replace(/(.{64})/g, '$1\n');
+  }  
+  return normalized;
+}
+
 // ── Inicialização ──────────────────────────────────────────
 let db: any = null;
 
 try {
   if (!admin.apps.length) {
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const rawKey = process.env.FIREBASE_PRIVATE_KEY;
+    const privateKey = normalizePrivateKey(rawKey);
+    
+    console.log('🔍 Firebase config:', {
+      projectId: process.env.FIREBASE_PROJECT_ID ? '✅' : '❌',
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL ? '✅' : '❌',
+      privateKey: privateKey ? `✅ (length: ${privateKey.length})` : '❌',
+    });
     
     if (!privateKey || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PROJECT_ID) {
       console.warn('⚠️ Variáveis do Firebase incompletas. Integrações não funcionarão.');
@@ -50,6 +82,7 @@ try {
   db = admin.firestore();
 } catch (error: any) {
   console.error('❌ Erro CRÍTICO ao inicializar Firebase:', error.message);
+  console.error('💡 Dica: Verifique se a FIREBASE_PRIVATE_KEY está formatada corretamente no Render');
 }
 
 // ── CRUD ───────────────────────────────────────────────────
@@ -64,7 +97,6 @@ export async function saveIntegration(
     const userRef = db.collection('users').doc(String(telegramId));
     const userDoc = await userRef.get();
     const now = Date.now();
-
     if (userDoc.exists) {
       await userRef.update({
         [`integrations.${provider}`]: data,
@@ -113,8 +145,7 @@ export async function getAllIntegrations(
     return userData.integrations || {};
   } catch (error: any) {
     console.error(`⚠️ Erro ao buscar integrações de ${telegramId}:`, error.message);
-    return {};
-  }
+    return {};  }
 }
 
 export async function removeIntegration(
@@ -163,8 +194,7 @@ export async function updateTokens(
   }
 }
 
-export async function saveUserInfo(
-  telegramId: number,
+export async function saveUserInfo(  telegramId: number,
   username?: string,
   firstName?: string
 ): Promise<void> {
