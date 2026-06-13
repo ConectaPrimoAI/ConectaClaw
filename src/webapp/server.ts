@@ -7,6 +7,7 @@ import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import {
   generateGoogleAuthUrl, exchangeGoogleCode, resolveGoogleState, saveGoogleConnection,
 } from '../integrations/google.js';
@@ -29,24 +30,72 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ CORREÇÃO CRÍTICA: Usar process.cwd() para garantir o caminho correto no Render
-const publicDir = path.join(process.cwd(), 'public');
-console.log(`📁 Servindo arquivos estáticos de: ${publicDir}`);
-app.use(express.static(publicDir));
+// ═══════════════════════════════════════════════════════════
+// SERVIR ARQUIVOS ESTÁTICOS - MÚLTIPLOS CAMINHOS
+// ═══════════════════════════════════════════════════════════
 
-// ✅ ROTA EXPLÍCITA para garantir que o HTML seja encontrado
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+console.log('📁 DEBUG: Procurando pasta public/');
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+// Tentar múltiplos caminhos possíveis
+const possiblePaths = [
+  path.join(process.cwd(), 'public'),
+  path.join(__dirname, '..', '..', 'public'),
+  path.join(__dirname, '..', 'public'),
+  path.join(process.cwd(), 'dist', 'public'),
+  path.join(__dirname, 'public'),
+];
+
+let publicDir = '';for (const p of possiblePaths) {
+  const exists = fs.existsSync(p);
+  console.log(`  ${exists ? '✅' : '❌'} ${p} ${exists ? '(ENCONTRADO!)' : '(não existe)'}`);
+  if (exists && !publicDir) {
+    publicDir = p;
+  }
+}
+
+if (!publicDir) {
+  console.error('❌ ERRO: Pasta public/ não encontrada em nenhum caminho!');
+  console.error('💡 Verifique se o arquivo public/connectors.html existe no repositório');
+} else {
+  console.log(`✅ Usando: ${publicDir}`);
+  app.use(express.static(publicDir));
+}
+
+// ═══════════════════════════════════════════════════════════
+// ROTAS
+// ═══════════════════════════════════════════════════════════
+
+// Rota explícita para o HTML (fallback)
 app.get('/conectores.html', (req: Request, res: Response) => {
-  const filePath = path.join(publicDir, 'connectors.html');
-  res.sendFile(filePath, (err) => {
-    if (err) {
-      console.error(`❌ Erro ao servir connectors.html:`, err);
-      res.status(500).send('Erro interno ao carregar o painel. Verifique os logs.');
-    }
-  });
+  const filePath = path.join(publicDir || process.cwd(), 'connectors.html');
+  console.log(`🔍 Tentando servir: ${filePath}`);
+  
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    console.error(`❌ Arquivo não encontrado: ${filePath}`);
+    res.status(404).send(`
+      <h1>❌ Arquivo não encontrado</h1>
+      <p>Caminho procurado: ${filePath}</p>
+      <p>Verifique se o arquivo public/connectors.html existe no repositório.</p>
+    `);
+  }
+});
+
+// Rota raiz redireciona para o painel
+app.get('/', (req: Request, res: Response) => {
+  res.redirect('/conectores.html');
 });
 
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'ConectaClaw', timestamp: Date.now() });
+  res.json({ 
+    status: 'ok', 
+    service: 'ConectaClaw', 
+    timestamp: Date.now(),
+    publicDir: publicDir || 'não encontrado'
+  });
 });
 app.get('/api/verify', (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
