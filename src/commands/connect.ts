@@ -70,9 +70,9 @@ export async function handleConectar(ctx: Context): Promise<void> {
     await ctx.reply(
       message,
       Markup.inlineKeyboard([
-        Markup.button.webApp('🔌 Abrir Painel de Conectores', panelUrl),
-        Markup.button.url('🔗 Abrir no navegador', panelUrl)
-      ]).reply_markup()
+        [Markup.button.webApp('🔌 Abrir Painel de Conectores', panelUrl)],
+        [Markup.button.url('🔗 Abrir no navegador', panelUrl)]
+      ])
     );
   } catch (error: any) {
     console.error('❌ Erro CRÍTICO no handleConectar:', error);
