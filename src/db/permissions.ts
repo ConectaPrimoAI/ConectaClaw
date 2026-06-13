@@ -3,7 +3,7 @@
  * Sistema de permissões granulares por serviço
  */
 
-export const PERMISSION_SCOPES = {
+export const PERMISSION_SCOPES: Record<string, Record<string, { scope: string; label: string }>> = {
   gmail: {
     read: { scope: 'https://www.googleapis.com/auth/gmail.readonly', label: 'Ler e-mails' },
     send: { scope: 'https://www.googleapis.com/auth/gmail.send', label: 'Enviar e-mails' },
@@ -61,13 +61,13 @@ export const PERMISSION_SCOPES = {
 };
 
 export function getPermissionScopes(provider: string, selectedPermissions: string[]): string[] {
-  const providerScopes = PERMISSION_SCOPES[provider as keyof typeof PERMISSION_SCOPES];
+  const providerScopes = PERMISSION_SCOPES[provider];
   if (!providerScopes) return [];
   
   const scopes = new Set<string>();
   selectedPermissions.forEach(perm => {
-    const scope = providerScopes[perm as keyof typeof providerScopes];
-    if (scope) scopes.add(scope.scope);
+    const scopeData = providerScopes[perm];
+    if (scopeData) scopes.add(scopeData.scope);
   });
   
   return Array.from(scopes);
