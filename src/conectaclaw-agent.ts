@@ -93,20 +93,28 @@ async function createStatusUpdater(ctx: Context, initialText: string) {
 }
 
 // ── Lógica de Intenção com LLM ──────────────────────────────
-const systemPrompt = `Você é o Conecta Claw🦞, um assistente brasileiro extremamente inteligente, prestativo e com personalidade humana.
-Sua missão é ajudar o usuário da melhor forma possível.
-Mantenha um tom amigável, direto e natural. Não use robotismos.
-Respostas devem ser concisas mas informativas.`;
+async function getDynamicSystemPrompt(userId: number): Promise<string> {
+    const { getAllIntegrations } = await import('./db/firebase.js');
+    const integrations = await getAllIntegrations(userId);
+    const active = Object.keys(integrations).join(', ') || 'Nenhuma';
+    
+    return `Você é o Conecta Claw🦞, um assistente brasileiro extremamente inteligente e prestativo.
+CONEXÕES ATIVAS DO USUÁRIO: ${active}.
+Use essa informação para saber o que você PODE fazer (Gmail, Drive, Notion, GitHub, etc).
+Se o usuário pedir algo de uma ferramenta não conectada, sugira o comando /conectar.
+Mantenha um tom amigável, direto e natural. Respostas concisas e informativas.`;
+}
 
 async function handleIntent(ctx: Context, text: string): Promise<string> {
     const userId = ctx.from!.id;
     const memory = getConversationMemory(userId);
     
     try {
+        const dynamicPrompt = await getDynamicSystemPrompt(userId);
         const response = await groq.chat.completions.create({
             model: "llama-3.3-70b-versatile",
             messages: [
-                { role: "system", content: systemPrompt },
+                { role: "system", content: dynamicPrompt },
                 ...memory.messages,
                 { role: "user", content: text }
             ],

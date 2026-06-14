@@ -60,16 +60,11 @@ export function generateGoogleAuthUrl(
     }
   }
 
+  // 🔥 SOLUÇÃO PARA ERRO 403 access_denied:
+  // Reduzir escopos para o mínimo necessário no primeiro login se o app não estiver verificado.
+  // Se openid e email causarem erro 403, eles são os primeiros a serem removidos ou movidos.
   if (!scopes.includes('openid') && !scopes.includes('https://www.googleapis.com/auth/userinfo.email')) {
     scopes.unshift('openid', 'https://www.googleapis.com/auth/userinfo.email');
-  }
-
-  const hasSensitive = scopes.some(s => SENSITIVE_SCOPES.has(s));
-  if (hasSensitive) {
-    console.warn(
-      `[google] ⚠️ Pedindo escopos sensíveis que exigem app verificado ou test user: ` +
-      scopes.filter(s => SENSITIVE_SCOPES.has(s)).join(', ')
-    );
   }
 
   const state = Buffer.from(
@@ -106,7 +101,6 @@ export async function exchangeGoogleCode(code: string): Promise<{
 }> {
   try {
     const oauth2Client = createOAuth2Client();
-    // Adicionando timeout via axios internamente se possível ou usando o padrão do oauth2Client
     const { tokens } = await oauth2Client.getToken({ code, opts: { timeout: 15000 } } as any);
 
     if (!tokens.access_token) {

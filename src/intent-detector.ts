@@ -5,7 +5,7 @@
 
 import { Context } from 'telegraf';
 import { Groq } from 'groq-sdk';
-import { hasIntegration } from './db/firebase.js';
+import { hasIntegration, getAllIntegrations } from './db/firebase.js';
 import * as google from './integrations/google.js';
 import * as notion from './integrations/notion.js';
 import * as github from './integrations/github.js';
@@ -103,12 +103,21 @@ const tools = [
 
 export async function detectIntent(userId: number, userMessage: string): Promise<IntentResult | null> {
   try {
+    // 🔍 Busca integrações ativas para informar a IA
+    const integrations = await getAllIntegrations(userId);
+    const activeIntegrations = Object.keys(integrations).join(', ') || 'Nenhuma';
+
     const completion: any = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',
-          content: `Você é um roteador de intenções. Analise a mensagem do usuário e, SE ela expressar claramente a vontade de executar uma das ações disponíveis, chame a função correspondente usando o mecanismo de tool calling. Caso seja conversa geral, dúvida, ou a intenção não esteja clara, NÃO chame nenhuma função (retorne apenas texto vazio). Ações disponíveis: send_email, read_emails, list_calendar_events, list_drive_files, search_notion, list_github_repos.`
+          content: `Você é um roteador de intenções para o Conecta Claw🦞. 
+          CONEXÕES ATIVAS DO USUÁRIO: ${activeIntegrations}.
+          
+          Analise a mensagem do usuário e, SE ela expressar claramente a vontade de executar uma das ações disponíveis, chame a função correspondente usando o mecanismo de tool calling. 
+          Caso seja conversa geral, dúvida, ou a intenção não esteja clara, NÃO chame nenhuma função (retorne apenas texto vazio). 
+          Ações disponíveis: send_email, read_emails, list_calendar_events, list_drive_files, search_notion, list_github_repos.`
         },
         { role: 'user', content: userMessage }
       ],
