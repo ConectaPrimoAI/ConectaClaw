@@ -239,16 +239,15 @@ bot.command('issues', async (ctx) => {
 // ── /start ──────────────────────────────────────────────────
 bot.start((ctx) => {
     ctx.reply(
-        '👋 Bem-vindo ao Conecta Claw🦞!\n\n' +
-        '🤖 *Posso te ajudar com:*\n' +
-        '   • 💬 Texto\n' +
-        '   • 🎤 Áudio / voz \n' +
-        '   • 🖼️ Foto (análise com visão)\n' +
-        '   • 🔌 /conectar — Conecte Gmail, Drive, Notion, GitHub\n' +
-        '   • 📧 /email — Enviar e-mails\n' +
-        '   • 📅 /agenda — Ver sua agenda\n' +
-        '   • 🐙 /repo — Repositórios do GitHub\n' +
-        '   • 🗑️ /clear — limpa minha memória'
+        '👋 Bem-vindo ao ConectaClaw 🦞\n\n' +
+'🤖 Posso ajudar com:\n\n' +
+'• 💬 Textos e perguntas\n' +
+'• 🎤 Áudios e voz\n' +
+'• 🖼️ Análise de imagens\n' +
+'• ⚡ Automações inteligentes\n\n' +
+'📡 Para conectar Gmail, Drive, Notion, GitHub e outros serviços, digite:\n\n' +
+'"/conectar"\n\n' +
+'🚀 Vamos começar?'
     );
 });
 
