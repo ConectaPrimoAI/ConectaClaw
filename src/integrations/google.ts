@@ -1,6 +1,7 @@
 /**
  * google.ts
  * Integração com Google APIs (Gmail, Drive, Calendar, Sheets) + Refresh Token
+ * v2.5: Adicionado bypass para 403 com verificação incremental de escopos
  */
 
 import { google } from 'googleapis';
@@ -24,6 +25,13 @@ const SENSITIVE_SCOPES = new Set<string>([
   'https://www.googleapis.com/auth/spreadsheets',
 ]);
 
+// 🔥 NOVO: Escopos básicos que raramente causam 403 (verificação Google)
+const SAFE_SCOPES = [
+  'openid',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+];
+
 function createOAuth2Client() {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -35,36 +43,42 @@ function createOAuth2Client() {
 export function generateGoogleAuthUrl(
   services: string[],
   telegramId: number,
-  oauthScopes?: string[]
+  oauthScopes?: string[],
+  bypassMode: boolean = false
 ): string {
   const oauth2Client = createOAuth2Client();
   let scopes: string[] = [];
 
-  if (oauthScopes && oauthScopes.length > 0) {
-    scopes = oauthScopes;
+  // 🔥 NOVO: Se em modo bypass (após 403), usar apenas escopos seguros
+  if (bypassMode) {
+    scopes = [...SAFE_SCOPES];
+    addLog(`🔐 Google: Modo bypass ativado (escopos reduzidos para verificação)`);
   } else {
-    for (const service of services) {
-      const key = service as keyof typeof GOOGLE_SCOPES;
-      if (GOOGLE_SCOPES[key]) {
-        scopes.push(...GOOGLE_SCOPES[key]);
+    if (oauthScopes && oauthScopes.length > 0) {
+      scopes = oauthScopes;
+    } else {
+      for (const service of services) {
+        const key = service as keyof typeof GOOGLE_SCOPES;
+        if (GOOGLE_SCOPES[key]) {
+          scopes.push(...GOOGLE_SCOPES[key]);
+        }
+      }
+
+      if (scopes.length === 0) {
+        scopes.push(
+          ...GOOGLE_SCOPES.gmail,
+          ...GOOGLE_SCOPES.drive,
+          ...GOOGLE_SCOPES.calendar,
+          ...GOOGLE_SCOPES.sheets
+        );
       }
     }
 
-    if (scopes.length === 0) {
-      scopes.push(
-        ...GOOGLE_SCOPES.gmail,
-        ...GOOGLE_SCOPES.drive,
-        ...GOOGLE_SCOPES.calendar,
-        ...GOOGLE_SCOPES.sheets
-      );
+    // Sempre incluir escopos de identidade
+    if (!scopes.includes('openid')) scopes.unshift('openid');
+    if (!scopes.includes('https://www.googleapis.com/auth/userinfo.email')) {
+      scopes.push('https://www.googleapis.com/auth/userinfo.email');
     }
-  }
-
-  // 🔥 SOLUÇÃO PARA ERRO 403 access_denied:
-  // Reduzir escopos para o mínimo necessário no primeiro login se o app não estiver verificado.
-  // Se openid e email causarem erro 403, eles são os primeiros a serem removidos ou movidos.
-  if (!scopes.includes('openid') && !scopes.includes('https://www.googleapis.com/auth/userinfo.email')) {
-    scopes.unshift('openid', 'https://www.googleapis.com/auth/userinfo.email');
   }
 
   const state = Buffer.from(
@@ -72,7 +86,8 @@ export function generateGoogleAuthUrl(
       telegram_id: telegramId,
       services,
       ts: Date.now(),
-      salt: process.env.JWT_SECRET?.substring(0, 8) || 'claw'
+      salt: process.env.JWT_SECRET?.substring(0, 8) || 'claw',
+      bypass: bypassMode,
     })
   ).toString('base64url');
 
@@ -89,6 +104,7 @@ export function resolveGoogleState(state: string): {
   telegram_id: number;
   services: string[];
   ts: number;
+  bypass?: boolean;
 } {
   return JSON.parse(Buffer.from(state, 'base64url').toString('utf-8'));
 }
@@ -190,7 +206,7 @@ export async function saveGoogleConnection(
   await saveIntegration(telegramId, 'google', data);
 }
 
-// ── Gmail ──────────────────────────────────────────────────
+// ── Gmail ──────────────────────────────────────────────
 
 export async function sendGmail(
   telegramId: number,
@@ -281,6 +297,30 @@ export async function readGmail(
   }
 }
 
+// 🔥 NOVO: Deletar e-mail
+export async function deleteGmail(
+  telegramId: number,
+  messageId: string
+): Promise<any> {
+  try {
+    const token = await getValidAccessToken(telegramId, 'gmail');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+    await gmail.users.messages.delete({
+      userId: 'me',
+      id: messageId,
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    addLog(`❌ Erro deleteGmail: ${error.message}`);
+    throw error;
+  }
+}
+
 // ── Google Drive ───────────────────────────────────────────
 
 export async function listDriveFiles(
@@ -330,6 +370,27 @@ export async function uploadDriveFile(
     return res.data;
   } catch (error: any) {
     addLog(`❌ Erro uploadDriveFile: ${error.message}`);
+    throw error;
+  }
+}
+
+// 🔥 NOVO: Deletar arquivo do Drive
+export async function deleteDriveFile(
+  telegramId: number,
+  fileId: string
+): Promise<any> {
+  try {
+    const token = await getValidAccessToken(telegramId, 'drive');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
+
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+    await drive.files.delete({ fileId });
+
+    return { success: true };
+  } catch (error: any) {
+    addLog(`❌ Erro deleteDriveFile: ${error.message}`);
     throw error;
   }
 }
@@ -392,6 +453,30 @@ export async function createCalendarEvent(
     return res.data;
   } catch (error: any) {
     addLog(`❌ Erro createCalendarEvent: ${error.message}`);
+    throw error;
+  }
+}
+
+// 🔥 NOVO: Deletar evento
+export async function deleteCalendarEvent(
+  telegramId: number,
+  eventId: string
+): Promise<any> {
+  try {
+    const token = await getValidAccessToken(telegramId, 'calendar');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
+
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    await calendar.events.delete({
+      calendarId: 'primary',
+      eventId,
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    addLog(`❌ Erro deleteCalendarEvent: ${error.message}`);
     throw error;
   }
 }

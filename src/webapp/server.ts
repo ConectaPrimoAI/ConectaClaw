@@ -183,6 +183,11 @@ app.get('/oauth/google/callback', async (req: Request, res: Response) => {
     } else if (errStr.includes('unauthorized_client')) {
       friendly = 'O app Google não está autorizado para este redirect_uri. Adicione https://conectaclaw.onrender.com/oauth/google/callback em "Authorized redirect URIs" no Google Cloud Console.';
     }
+    // 🔥 NOVO: Se for 403 (test user), oferecer modo bypass
+    if (errStr === '403' || errStr.includes('access_denied')) {
+      friendly = 'Google bloqueou a verificação. Tentando modo bypass com escopos reduzidos...';
+      return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(friendly)}&provider=google&bypass=true`);
+    }
     return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(friendly)}&provider=google`);
   }
   if (!code || !state) {
@@ -215,7 +220,10 @@ app.get('/oauth/google/callback', async (req: Request, res: Response) => {
     if (status === 400 && /redirect_uri_mismatch/i.test(errorMsg)) {
       friendly = 'redirect_uri_mismatch: o redirect_uri enviado não bate com o cadastrado no Google Cloud. Atualize GOOGLE_REDIRECT_URI para https://conectaclaw.onrender.com/oauth/google/callback e cadastre o mesmo valor em "Authorized redirect URIs".';
     } else if (status === 403) {
-      friendly = 'Google bloqueou a requisição (403). Causas mais prováveis: (1) seu e-mail não está adicionado como Test User no OAuth Consent Screen do projeto conectaclaw-oauth; (2) a Cloud Firestore / Google+ API está desabilitada. Acesse console.cloud.google.com e revise.';
+      // 🔥 NOVO: Modo bypass para 403
+      friendly = 'Google bloqueou a requisição (403). Tentando modo bypass com escopos reduzidos...';
+      console.log('🔄 [Google OAuth] Ativando modo bypass para 403');
+      return res.redirect(`${baseUrl}/conectores.html?error=${encodeURIComponent(friendly)}&provider=google&bypass=true`);
     } else if (/access_denied/i.test(errorMsg)) {
       friendly = 'Acesso negado pelo Google. Se o seu e-mail não foi adicionado como test user, o Google bloqueia a tela com "Acesso bloqueado: o app não concluiu o processo de verificação". Adicione-o em OAuth Consent Screen → Test users.';
     }
@@ -323,8 +331,73 @@ app.post('/api/disconnect', async (req: Request, res: Response) => {
   try {
     const { removeIntegration } = await import('../db/firebase.js');
     await removeIntegration(decoded.telegram_id, provider);
-    res.json({ success: true });
+    console.log(`✅ [API] Desconectado: ${provider} para usuário ${decoded.telegram_id}`);
+    res.json({ success: true, message: `${provider} desconectado com sucesso` });
   } catch (error: any) {
+    console.error(`❌ [API] Erro ao desconectar ${provider}:`, error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 🔥 NOVO: Endpoint para atualizar permissões
+app.post('/api/reconnect', async (req: Request, res: Response) => {
+  const { token, provider, scopes } = req.body;
+  const decoded = verifyUserToken(token || '');
+  if (!decoded) return res.status(401).json({ error: 'Token inválido' });
+
+  try {
+    console.log(`🔄 [API] Reconectando ${provider} com novas permissões para ${decoded.telegram_id}`);
+    const { removeIntegration } = await import('../db/firebase.js');
+    await removeIntegration(decoded.telegram_id, provider);
+    
+    // Gera nova URL de auth com escopos atualizados
+    const selectedScopes = scopes || [];
+    const oauthScopes = getPermissionScopes(provider, selectedScopes);
+    
+    let authUrl = '';
+    if (['gmail', 'drive', 'calendar', 'sheets'].includes(provider)) {
+      const { generateGoogleAuthUrl } = await import('../integrations/google.js');
+      authUrl = generateGoogleAuthUrl([provider], decoded.telegram_id, oauthScopes);
+    } else if (provider === 'notion') {
+      const { generateNotionAuthUrl } = await import('../integrations/notion.js');
+      authUrl = generateNotionAuthUrl(decoded.telegram_id, oauthScopes);
+    } else if (provider === 'github') {
+      const { generateGitHubAuthUrl } = await import('../integrations/github.js');
+      authUrl = generateGitHubAuthUrl(decoded.telegram_id, oauthScopes);
+    }
+    
+    res.json({ success: true, url: authUrl });
+  } catch (error: any) {
+    console.error(`❌ [API] Erro ao reconectar ${provider}:`, error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 🔥 NOVO: Endpoint para consultar permissões ativas
+app.get('/api/permissions', async (req: Request, res: Response) => {
+  const token = req.query.token as string;
+  const provider = req.query.provider as string;
+  const decoded = verifyUserToken(token || '');
+  if (!decoded) return res.status(401).json({ error: 'Token inválido' });
+
+  try {
+    const { getIntegration } = await import('../db/firebase.js');
+    const integration = await getIntegration(decoded.telegram_id, provider);
+    
+    if (!integration) {
+      return res.json({ connected: false, scopes: [] });
+    }
+    
+    const scopes = integration.scope ? integration.scope.split(',') : [];
+    res.json({
+      connected: true,
+      provider,
+      scopes,
+      connectedAt: integration.connectedAt,
+      updatedAt: integration.updatedAt
+    });
+  } catch (error: any) {
+    console.error(`❌ [API] Erro ao buscar permissões:`, error);
     res.status(500).json({ error: error.message });
   }
 });
