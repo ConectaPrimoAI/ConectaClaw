@@ -12,21 +12,8 @@ import {
   IntegrationData,
 } from '../db/firebase.js';
 import { GOOGLE_SCOPES } from './types.js';
+import { addLog } from '../web-terminal.js';
 
-/**
- * Conjunto de escopos "sensíveis" que disparam o aviso de
- * "app nao verificado pelo Google" ate que o app passe pelo
- * processo de OAuth verification do Google Cloud Console.
- *
- * Enquanto o app esta em modo "Testing", esses escopos
- * exigem que o usuario esteja na lista de test users do projeto
- * (Google Cloud -> APIs & Services -> OAuth consent screen -> Test users).
- * Se o usuario nao estiver, recebe a tela "Acesso bloqueado: o app
- * nao concluiu o processo de verificacao do Google".
- *
- * Para minimizar esse problema no fluxo "padrao", separamos os
- * escopos em "safe" (nao exigem verificacao) e "sensitive" (exigem).
- */
 const SENSITIVE_SCOPES = new Set<string>([
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.modify',
@@ -53,11 +40,9 @@ export function generateGoogleAuthUrl(
   const oauth2Client = createOAuth2Client();
   let scopes: string[] = [];
 
-  // Se escopos OAuth reais foram fornecidos, usa-os diretamente
   if (oauthScopes && oauthScopes.length > 0) {
     scopes = oauthScopes;
   } else {
-    // Fallback: mapeia services para escopos
     for (const service of services) {
       const key = service as keyof typeof GOOGLE_SCOPES;
       if (GOOGLE_SCOPES[key]) {
@@ -65,7 +50,6 @@ export function generateGoogleAuthUrl(
       }
     }
 
-    // Se ainda nao houver escopos, usa todos os padrao
     if (scopes.length === 0) {
       scopes.push(
         ...GOOGLE_SCOPES.gmail,
@@ -76,13 +60,10 @@ export function generateGoogleAuthUrl(
     }
   }
 
-  // Garante que o scope basico de identidade esteja sempre presente
   if (!scopes.includes('openid') && !scopes.includes('https://www.googleapis.com/auth/userinfo.email')) {
     scopes.unshift('openid', 'https://www.googleapis.com/auth/userinfo.email');
   }
 
-  // Loga quais escopos sensiveis estao sendo pedidos (ajuda a diagnosticar
-  // o erro "Acesso bloqueado: o app nao concluiu o processo de verificacao").
   const hasSensitive = scopes.some(s => SENSITIVE_SCOPES.has(s));
   if (hasSensitive) {
     console.warn(
@@ -91,7 +72,6 @@ export function generateGoogleAuthUrl(
     );
   }
 
-  // Adicionando um salt basico para evitar manipulacao simples do state
   const state = Buffer.from(
     JSON.stringify({
       telegram_id: telegramId,
@@ -126,7 +106,8 @@ export async function exchangeGoogleCode(code: string): Promise<{
 }> {
   try {
     const oauth2Client = createOAuth2Client();
-    const { tokens } = await oauth2Client.getToken(code);
+    // Adicionando timeout via axios internamente se possível ou usando o padrão do oauth2Client
+    const { tokens } = await oauth2Client.getToken({ code, opts: { timeout: 15000 } } as any);
 
     if (!tokens.access_token) {
       throw new Error('Google não retornou um access_token válido.');
@@ -176,7 +157,8 @@ export async function getValidAccessToken(
 
       return credentials.access_token!;
     } catch (error: any) {
-      throw new Error(`Falha ao refresh token: ${error.message}`);
+      addLog(`❌ Falha ao refresh token ${provider} para ${telegramId}: ${error.message}`);
+      throw new Error(`Falha ao atualizar acesso do Google. Por favor, conecte novamente via /conectar.`);
     }
   }
 
@@ -222,33 +204,38 @@ export async function sendGmail(
   subject: string,
   body: string
 ): Promise<any> {
-  const token = await getValidAccessToken(telegramId, 'gmail');
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: token });
+  try {
+    const token = await getValidAccessToken(telegramId, 'gmail');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
 
-  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-  const message = [
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/html; charset=utf-8',
-    '',
-    body,
-  ].join('\n');
+    const message = [
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      body,
+    ].join('\n');
 
-  const encodedMessage = Buffer.from(message)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+    const encodedMessage = Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
 
-  const res = await gmail.users.messages.send({
-    userId: 'me',
-    requestBody: { raw: encodedMessage },
-  });
+    const res = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: { raw: encodedMessage },
+    });
 
-  return res.data;
+    return res.data;
+  } catch (error: any) {
+    addLog(`❌ Erro sendGmail: ${error.message}`);
+    throw error;
+  }
 }
 
 export async function readGmail(
@@ -256,43 +243,48 @@ export async function readGmail(
   query: string = 'is:unread',
   maxResults: number = 10
 ): Promise<any[]> {
-  const token = await getValidAccessToken(telegramId, 'gmail');
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: token });
+  try {
+    const token = await getValidAccessToken(telegramId, 'gmail');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
 
-  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-  const listRes = await gmail.users.messages.list({
-    userId: 'me',
-    q: query,
-    maxResults,
-  });
+    const listRes = await gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults,
+    });
 
-  if (!listRes.data.messages) return [];
+    if (!listRes.data.messages) return [];
 
-  const messages = await Promise.all(
-    listRes.data.messages.map(async (msg) => {
-      const detail = await gmail.users.messages.get({
-        userId: 'me',
-        id: msg.id!,
-      });
+    const messages = await Promise.all(
+      listRes.data.messages.map(async (msg) => {
+        const detail = await gmail.users.messages.get({
+          userId: 'me',
+          id: msg.id!,
+        });
 
-      const headers = detail.data.payload?.headers || [];
-      const from = headers.find((h) => h.name === 'From')?.value || '';
-      const subject = headers.find((h) => h.name === 'Subject')?.value || '';
-      const date = headers.find((h) => h.name === 'Date')?.value || '';
+        const headers = detail.data.payload?.headers || [];
+        const from = headers.find((h) => h.name === 'From')?.value || '';
+        const subject = headers.find((h) => h.name === 'Subject')?.value || '';
+        const date = headers.find((h) => h.name === 'Date')?.value || '';
 
-      return {
-        id: msg.id,
-        from,
-        subject,
-        date,
-        snippet: detail.data.snippet,
-      };
-    })
-  );
+        return {
+          id: msg.id,
+          from,
+          subject,
+          date,
+          snippet: detail.data.snippet,
+        };
+      })
+    );
 
-  return messages;
+    return messages;
+  } catch (error: any) {
+    addLog(`❌ Erro readGmail: ${error.message}`);
+    throw error;
+  }
 }
 
 // ── Google Drive ───────────────────────────────────────────
@@ -302,20 +294,25 @@ export async function listDriveFiles(
   query?: string,
   pageSize: number = 20
 ): Promise<any[]> {
-  const token = await getValidAccessToken(telegramId, 'drive');
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: token });
+  try {
+    const token = await getValidAccessToken(telegramId, 'drive');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
 
-  const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
-  const res = await drive.files.list({
-    q: query,
-    pageSize,
-    fields: 'files(id, name, mimeType, modifiedTime, size, webViewLink)',
-    orderBy: 'modifiedTime desc',
-  });
+    const res = await drive.files.list({
+      q: query,
+      pageSize,
+      fields: 'files(id, name, mimeType, modifiedTime, size, webViewLink)',
+      orderBy: 'modifiedTime desc',
+    });
 
-  return res.data.files || [];
+    return res.data.files || [];
+  } catch (error: any) {
+    addLog(`❌ Erro listDriveFiles: ${error.message}`);
+    throw error;
+  }
 }
 
 export async function uploadDriveFile(
@@ -324,18 +321,23 @@ export async function uploadDriveFile(
   mimeType: string,
   content: Buffer | string
 ): Promise<any> {
-  const token = await getValidAccessToken(telegramId, 'drive');
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: token });
+  try {
+    const token = await getValidAccessToken(telegramId, 'drive');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
 
-  const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
-  const res = await drive.files.create({
-    requestBody: { name, mimeType },
-    media: { mimeType, body: typeof content === 'string' ? undefined : require('stream').Readable.from(content) },
-  });
+    const res = await drive.files.create({
+      requestBody: { name, mimeType },
+      media: { mimeType, body: typeof content === 'string' ? undefined : require('stream').Readable.from(content) },
+    });
 
-  return res.data;
+    return res.data;
+  } catch (error: any) {
+    addLog(`❌ Erro uploadDriveFile: ${error.message}`);
+    throw error;
+  }
 }
 
 // ── Google Calendar ────────────────────────────────────────
@@ -346,22 +348,27 @@ export async function listCalendarEvents(
   timeMax?: string,
   maxResults: number = 10
 ): Promise<any[]> {
-  const token = await getValidAccessToken(telegramId, 'calendar');
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: token });
+  try {
+    const token = await getValidAccessToken(telegramId, 'calendar');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
 
-  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-  const res = await calendar.events.list({
-    calendarId: 'primary',
-    timeMin: timeMin || new Date().toISOString(),
-    timeMax,
-    maxResults,
-    singleEvents: true,
-    orderBy: 'startTime',
-  });
+    const res = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: timeMin || new Date().toISOString(),
+      timeMax,
+      maxResults,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
 
-  return res.data.items || [];
+    return res.data.items || [];
+  } catch (error: any) {
+    addLog(`❌ Erro listCalendarEvents: ${error.message}`);
+    throw error;
+  }
 }
 
 export async function createCalendarEvent(
@@ -371,23 +378,28 @@ export async function createCalendarEvent(
   end: string,
   description?: string
 ): Promise<any> {
-  const token = await getValidAccessToken(telegramId, 'calendar');
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: token });
+  try {
+    const token = await getValidAccessToken(telegramId, 'calendar');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
 
-  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-  const res = await calendar.events.insert({
-    calendarId: 'primary',
-    requestBody: {
-      summary,
-      description,
-      start: { dateTime: start, timeZone: 'America/Sao_Paulo' },
-      end: { dateTime: end, timeZone: 'America/Sao_Paulo' },
-    },
-  });
+    const res = await calendar.events.insert({
+      calendarId: 'primary',
+      requestBody: {
+        summary,
+        description,
+        start: { dateTime: start, timeZone: 'America/Sao_Paulo' },
+        end: { dateTime: end, timeZone: 'America/Sao_Paulo' },
+      },
+    });
 
-  return res.data;
+    return res.data;
+  } catch (error: any) {
+    addLog(`❌ Erro createCalendarEvent: ${error.message}`);
+    throw error;
+  }
 }
 
 // ── Google Sheets ──────────────────────────────────────────
@@ -397,18 +409,23 @@ export async function readSheet(
   spreadsheetId: string,
   range: string
 ): Promise<any[][]> {
-  const token = await getValidAccessToken(telegramId, 'sheets');
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: token });
+  try {
+    const token = await getValidAccessToken(telegramId, 'sheets');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
 
-  const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+    const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range,
-  });
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range,
+    });
 
-  return (res.data.values as any[][]) || [];
+    return (res.data.values as any[][]) || [];
+  } catch (error: any) {
+    addLog(`❌ Erro readSheet: ${error.message}`);
+    throw error;
+  }
 }
 
 export async function writeSheet(
@@ -417,18 +434,23 @@ export async function writeSheet(
   range: string,
   values: any[][]
 ): Promise<any> {
-  const token = await getValidAccessToken(telegramId, 'sheets');
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({ access_token: token });
+  try {
+    const token = await getValidAccessToken(telegramId, 'sheets');
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({ access_token: token });
 
-  const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+    const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
-  const res = await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values },
-  });
+    const res = await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values },
+    });
 
-  return res.data;
+    return res.data;
+  } catch (error: any) {
+    addLog(`❌ Erro writeSheet: ${error.message}`);
+    throw error;
+  }
 }

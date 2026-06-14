@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
 import { getAllIntegrations } from '../db/firebase.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'conectaclaw_secret_2026_x9f2m7p4q8r1w5e6';
-const JWT_EXPIRY = '2h'; // Aumentado para 2 horas para evitar expiração prematura
+const JWT_EXPIRY = '24h'; // Aumentado para 24 horas para evitar expiração prematura
 
 export function generateUserToken(telegramId: number): string {
   const now = Math.floor(Date.now() / 1000);
@@ -43,7 +43,7 @@ export function verifyUserToken(token: string): { telegram_id: number } | null {
   } catch (error: any) {
     let detail = error.message;
     if (error.name === 'TokenExpiredError') {
-      detail = 'O link de conexão expirou por segurança (validade de 2h). Por favor, gere um novo link usando /conectar.';
+      detail = 'O link de conexão expirou por segurança (validade de 24h). Por favor, gere um novo link usando /conectar.';
     } else if (error.name === 'JsonWebTokenError') {
       detail = 'O link de conexão é inválido ou foi corrompido.';
     }
@@ -81,8 +81,9 @@ export async function handleConectar(ctx: Context): Promise<void> {
 
     const message = `🦞 E aí, ${firstName}! Vou te conectar às suas ferramentas favoritas.\n\n` +
       `Clica no botão abaixo pra abrir o painel de conectores. Lá você escolhe o que liberar e conecta em segundos.\n\n` +
+      `⚠️ *Primeira vez?* Se o Google bloquear o acesso, peça ao desenvolvedor para adicionar seu email como "Test user" no Google Cloud Console, ou aguarde a verificação do app (3-5 dias úteis).\n\n` +
       `🔒 *Seguro:* Seus tokens ficam criptografados e você pode desconectar quando quiser.\n` +
-      `⏰ *Validade:* 2 horas${statusText}`;
+      `⏰ *Validade:* 24 horas${statusText}`;
 
     // ✅ Em Telegraf v4+, `Markup.inlineKeyboard` foi removido.
     // Construimos o inline_keyboard manualmente para maxima compatibilidade.
@@ -98,7 +99,7 @@ export async function handleConectar(ctx: Context): Promise<void> {
     try {
       await ctx.reply(message, { parse_mode: 'Markdown', ...inlineKeyboard } as any);
     } catch (e: any) {
-      // Fallback: se o Telegram recusar web_app (alguns bots antigos), envia s� o link normal.
+      // Fallback: se o Telegram recusar web_app (alguns bots antigos), envia só o link normal.
       console.warn('[conectar] fallback sem web_app:', e.message);
       await ctx.reply(
         `${message}\n\n👉 ${panelUrl}`,

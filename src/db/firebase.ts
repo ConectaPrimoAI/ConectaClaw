@@ -28,6 +28,11 @@ export interface UserConnections {
 
 // ── Inicialização ──────────────────────────────────────────
 let db: any = null;
+let memoryStorage: Map<string, UserConnections> = new Map();
+
+export function isFirebaseAvailable(): boolean {
+  return db !== null;
+}
 
 try {
   if (!admin.apps.length) {
@@ -35,68 +40,60 @@ try {
     console.log('🔐 FIREBASE CONFIGURATION');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
-    // Tenta primeiro o JSON completo
     const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
     
     if (serviceAccountJson) {
       console.log('✅ Usando FIREBASE_SERVICE_ACCOUNT (JSON completo)');
-      
       try {
         const serviceAccount = JSON.parse(serviceAccountJson);
-        
-        console.log('📋 Service Account:', {
-          project_id: serviceAccount.project_id,
-          client_email: serviceAccount.client_email ? '✅' : '❌',
-          private_key_length: serviceAccount.private_key?.length || 0,        });
-        
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
           databaseURL: process.env.FIREBASE_DATABASE_URL,
         });
-        
         console.log('✅ Firebase inicializado com sucesso!');
       } catch (parseError: any) {
         console.error('❌ Erro ao parsear JSON:', parseError.message);
-        console.error('💡 Verifique se o JSON está formatado corretamente');
         throw parseError;
       }
     } else {
-      // Fallback para variáveis separadas (método antigo)
       console.log('⚠️ FIREBASE_SERVICE_ACCOUNT não encontrado, tentando variáveis separadas...');
-      
       const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-      
-      if (!privateKey || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PROJECT_ID) {
-        console.error('❌ Variáveis do Firebase incompletas');
-        throw new Error('Configure FIREBASE_SERVICE_ACCOUNT ou as variáveis FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL e FIREBASE_PROJECT_ID');
+      if (privateKey && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PROJECT_ID) {
+        admin.initializeApp({
+          credential: admin.credential.cert({
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: privateKey,
+          }),
+          databaseURL: process.env.FIREBASE_DATABASE_URL,
+        });
+        console.log('✅ Firebase inicializado com sucesso!');
+      } else {
+        console.warn('⚠️ Variáveis do Firebase incompletas. Usando modo "sem persistência" (memória).');
       }
-      
-      admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId: process.env.FIREBASE_PROJECT_ID,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: privateKey,
-        }),
-        databaseURL: process.env.FIREBASE_DATABASE_URL,
-      });
-      
-      console.log('✅ Firebase inicializado com sucesso!');
     }
   }
-  db = admin.firestore();
+  if (admin.apps.length) {
+    db = admin.firestore();
+  }
 } catch (error: any) {
   console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.error('❌ ERRO CRÍTICO AO INICIALIZAR FIREBASE');
+  console.error('❌ ERRO AO INICIALIZAR FIREBASE');
   console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.error('Erro:', error.message);
-  console.error('');
-  console.error('💡 SOLUÇÃO RECOMENDADA:');
-  console.error('   1. Firebase Console → Project Settings → Service Accounts');
-  console.error('   2. Generate new private key (baixa um JSON)');
-  console.error('   3. Abra o JSON e copie TODO o conteúdo');
-  console.error('   4. No Render, crie a variável FIREBASE_SERVICE_ACCOUNT');
-  console.error('   5. Cole o JSON inteiro em UMA LINHA (mantenha os \\n)');
-  console.error('   6. Remova as variáveis FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL e FIREBASE_PROJECT_ID');}
+  db = null;
+}
+
+function handleFirestoreError(error: any) {
+  if (error.message?.includes('PERMISSION_DENIED') || error.message?.includes('not been used in project')) {
+    console.error('\n⚠️ Firestore não está configurado. O desenvolvedor precisa:');
+    console.error('1. Acessar https://console.cloud.google.com/apis/api/firestore.googleapis.com/overview?project=conectaclaw-oauth');
+    console.error('2. Clicar em "ENABLE"');
+    console.error('3. Aguardar 2-3 minutos\n');
+  } else {
+    console.error('❌ Erro no Firestore:', error.message);
+  }
+}
 
 // ── CRUD ───────────────────────────────────────────────────
 
@@ -105,32 +102,45 @@ export async function saveIntegration(
   provider: string,
   data: IntegrationData
 ): Promise<void> {
+  const now = Date.now();
+  if (!db) {
+    const user = memoryStorage.get(String(telegramId)) || {
+      telegram_id: telegramId,
+      integrations: {},
+      createdAt: now,
+      updatedAt: now
+    };
+    user.integrations[provider] = data;
+    user.updatedAt = now;
+    memoryStorage.set(String(telegramId), user);
+    return;
+  }
+
   try {
-    if (!db) throw new Error('Firebase não inicializado');
     const userRef = db.collection('users').doc(String(telegramId));
     const userDoc = await userRef.get();
-    const now = Date.now();
-
-    // Le o documento atual para preservar integrations de outros providers.
-    // Sem isso, usar set com merge: true em um documento INEXISTENTE pode
-    // gerar conflito em algumas combinacoes de regras do Firestore.
     const current = userDoc.exists ? (userDoc.data() as UserConnections) : null;
     const currentIntegrations = current?.integrations || {};
     const mergedIntegrations = { ...currentIntegrations, [provider]: data };
 
-    // ✅ Usamos set com merge: true para garantir que o documento exista e atualizar apenas o campo necessário.
-    // Isso resolve erros de "Missing or insufficient permissions" quando as regras do Firestore
-    // exigem que o documento exista ou quando há conflitos de escrita.
     await userRef.set({
       telegram_id: telegramId,
       integrations: mergedIntegrations,
       updatedAt: now,
-      // Se não existir, define createdAt. Se existir, mantém o valor atual.
       createdAt: current?.createdAt || now
     }, { merge: true });
   } catch (error: any) {
-    console.error(`❌ Erro ao salvar integração ${provider}:`, error.message);
-    throw error;
+    handleFirestoreError(error);
+    // Fallback para memória se falhar
+    const user = memoryStorage.get(String(telegramId)) || {
+      telegram_id: telegramId,
+      integrations: {},
+      createdAt: now,
+      updatedAt: now
+    };
+    user.integrations[provider] = data;
+    user.updatedAt = now;
+    memoryStorage.set(String(telegramId), user);
   }
 }
 
@@ -138,31 +148,36 @@ export async function getIntegration(
   telegramId: number,
   provider: string
 ): Promise<IntegrationData | null> {
+  if (!db) {
+    return memoryStorage.get(String(telegramId))?.integrations[provider] || null;
+  }
   try {
-    if (!db) return null;
     const userRef = db.collection('users').doc(String(telegramId));
     const userDoc = await userRef.get();
-    if (!userDoc.exists) return null;
+    if (!userDoc.exists) return memoryStorage.get(String(telegramId))?.integrations[provider] || null;
     const userData = userDoc.data() as UserConnections;
     return userData.integrations?.[provider] || null;
   } catch (error: any) {
-    console.error(`⚠️ Erro ao buscar integração ${provider} de ${telegramId}:`, error.message);
-    return null;
+    handleFirestoreError(error);
+    return memoryStorage.get(String(telegramId))?.integrations[provider] || null;
   }
 }
+
 export async function getAllIntegrations(
   telegramId: number
 ): Promise<Record<string, IntegrationData>> {
+  if (!db) {
+    return memoryStorage.get(String(telegramId))?.integrations || {};
+  }
   try {
-    if (!db) return {};
     const userRef = db.collection('users').doc(String(telegramId));
     const userDoc = await userRef.get();
-    if (!userDoc.exists) return {};
+    if (!userDoc.exists) return memoryStorage.get(String(telegramId))?.integrations || {};
     const userData = userDoc.data() as UserConnections;
     return userData.integrations || {};
   } catch (error: any) {
-    console.error(`⚠️ Erro ao buscar integrações de ${telegramId}:`, error.message);
-    return {};
+    handleFirestoreError(error);
+    return memoryStorage.get(String(telegramId))?.integrations || {};
   }
 }
 
@@ -170,8 +185,15 @@ export async function removeIntegration(
   telegramId: number,
   provider: string
 ): Promise<void> {
+  if (!db) {
+    const user = memoryStorage.get(String(telegramId));
+    if (user) {
+      delete user.integrations[provider];
+      user.updatedAt = Date.now();
+    }
+    return;
+  }
   try {
-    if (!db) throw new Error('Firebase não inicializado');
     const userRef = db.collection('users').doc(String(telegramId));
     await userRef.set({
       integrations: {
@@ -180,8 +202,12 @@ export async function removeIntegration(
       updatedAt: Date.now(),
     }, { merge: true });
   } catch (error: any) {
-    console.error(`❌ Erro ao remover integração ${provider}:`, error.message);
-    throw error;
+    handleFirestoreError(error);
+    const user = memoryStorage.get(String(telegramId));
+    if (user) {
+      delete user.integrations[provider];
+      user.updatedAt = Date.now();
+    }
   }
 }
 
@@ -192,27 +218,30 @@ export async function updateTokens(
   refreshToken?: string,
   tokenExpiry?: number
 ): Promise<void> {
+  const now = Date.now();
+  if (!db) {
+    const user = memoryStorage.get(String(telegramId));
+    if (user && user.integrations[provider]) {
+      user.integrations[provider].accessToken = accessToken;
+      if (refreshToken) user.integrations[provider].refreshToken = refreshToken;
+      if (tokenExpiry) user.integrations[provider].tokenExpiry = tokenExpiry;
+      user.integrations[provider].updatedAt = now;
+      user.updatedAt = now;
+    }
+    return;
+  }
   try {
-    if (!db) throw new Error('Firebase não inicializado');
     const userRef = db.collection('users').doc(String(telegramId));
-    
-    const integrationUpdate: any = {
-      accessToken,
-      updatedAt: Date.now()
-    };
-
+    const integrationUpdate: any = { accessToken, updatedAt: now };
     if (refreshToken) integrationUpdate.refreshToken = refreshToken;
     if (tokenExpiry) integrationUpdate.tokenExpiry = tokenExpiry;
 
     await userRef.set({
-      integrations: {
-        [provider]: integrationUpdate
-      },
-      updatedAt: Date.now()
+      integrations: { [provider]: integrationUpdate },
+      updatedAt: now
     }, { merge: true });
   } catch (error: any) {
-    console.error(`❌ Erro ao atualizar tokens ${provider}:`, error.message);
-    throw error;
+    handleFirestoreError(error);
   }
 }
 
@@ -221,18 +250,29 @@ export async function saveUserInfo(
   username?: string,
   firstName?: string
 ): Promise<void> {
+  const now = Date.now();
+  if (!db) {
+    const user = memoryStorage.get(String(telegramId)) || {
+      telegram_id: telegramId,
+      integrations: {},
+      createdAt: now,
+      updatedAt: now
+    };
+    if (username) user.username = username;
+    if (firstName) user.first_name = firstName;
+    user.updatedAt = now;
+    memoryStorage.set(String(telegramId), user);
+    return;
+  }
   try {
-    if (!db) throw new Error('Firebase não inicializado');
     const userRef = db.collection('users').doc(String(telegramId));
-    
     await userRef.set({
       username: username || admin.firestore.FieldValue.delete(),
       first_name: firstName || admin.firestore.FieldValue.delete(),
-      updatedAt: Date.now(),
+      updatedAt: now,
     }, { merge: true });
   } catch (error: any) {
-    console.error(`❌ Erro ao salvar info do usuário ${telegramId}:`, error.message);
-    throw error;
+    handleFirestoreError(error);
   }
 }
 
@@ -240,16 +280,9 @@ export async function hasIntegration(
   telegramId: number,
   provider: string
 ): Promise<boolean> {
-  try {
-    if (!db) return false;
-    const userRef = db.collection('users').doc(String(telegramId));
-    const userDoc = await userRef.get();
-    if (!userDoc.exists) return false;
-    const userData = userDoc.data() as UserConnections;
-    const integration = userData.integrations?.[provider];
-    return integration !== undefined && !!integration.accessToken;
-  } catch {
-    return false;  }
+  const integrations = await getAllIntegrations(telegramId);
+  const integration = integrations[provider];
+  return integration !== undefined && !!integration.accessToken;
 }
 
 export { db, admin };

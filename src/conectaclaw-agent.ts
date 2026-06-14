@@ -175,7 +175,7 @@ bot.command('emails', async (ctx) => {
         await handleReadEmailsCommand(ctx);
     } catch (error: any) {
         addLog(`❌ Erro no /emails: ${error.message}`);
-        await ctx.reply('❌ Erro ao ler e-mails.');
+        await ctx.reply('❌ Erro ao ler e-emails.');
     }
 });
 
@@ -255,13 +255,18 @@ bot.command('clear', (ctx) => {
 
 // ── /model — info ───────────────────────────────────────────
 bot.command('model', (ctx) => {
+    const replicateToken = process.env.REPLICATE_API_TOKEN ? '✅ Configurado' : '⚠️ Não configurado';
     ctx.reply(
         `🧠 *Conecta Claw🦞 — Status*\n\n` +
         `LLM: \`llama-3.3-70b-versatile\` (Groq)\n` +
         `🎤 Áudio: \`whisper-large-v3\` (Groq)\n` +
-        `🔊 TTS: Google TTS\n` +
+        `🔊 TTS: Replicate (Kokoro) — voz masculina\n` +
         `👁️ Visão: \`llama-3.2-90b-vision-preview\` (Groq)\n` +
-        `🔌 Integrações: Gmail, Drive, Calendar, Sheets, Notion, GitHub`
+        `🔌 Integrações: Gmail, Drive, Calendar, Sheets, Notion, GitHub\n\n` +
+        `⚙️ *Configuração:*\n` +
+        `Replicate: ${replicateToken}\n` +
+        `🎨 Imagem: ${process.env.REPLICATE_API_TOKEN ? 'Habilitada' : 'Desabilitada'}\n` +
+        `🎬 Vídeo: ${process.env.REPLICATE_API_TOKEN ? 'Habilitado' : 'Desabilitado'}`
     );
 });
 
@@ -269,6 +274,10 @@ bot.command('model', (ctx) => {
 bot.command('voz', async (ctx) => {
     const text = ctx.message.text.replace(/^\/voz\s*/i, '').trim();
     if (!text) return ctx.reply('🔊 Uso: `/voz <texto>`', { parse_mode: 'Markdown' });
+
+    if (!process.env.REPLICATE_API_TOKEN) {
+        return ctx.reply('⚠️ Replicate não configurado. Não consigo gerar áudio no momento.');
+    }
 
     const status = await createStatusUpdater(ctx, '🔊 Gerando áudio...');
     try {
@@ -323,7 +332,7 @@ bot.on('photo', async (ctx) => {
         const tg: any = (ctx as any).telegram;
         const fileLink = await tg.getFileLink(photo.file_id);
         const dest = path.join(TMP_DIR, `img_${Date.now()}.jpg`);
-        const dl = await axios.get(fileLink.href, { responseType: 'arraybuffer', timeout: 60000 });
+        const dl = await axios.get(fileLink.href || fileLink, { responseType: 'arraybuffer', timeout: 60000 });
         fs.writeFileSync(dest, Buffer.from(dl.data));
 
         const caption = ctx.message.caption || 'Descreva esta imagem em detalhes, em português.';
@@ -351,7 +360,7 @@ async function handleAudioMessage(ctx: Context, fileId: string, mimeHint = 'audi
         const ext = mimeHint.includes('mp4') || mimeHint.includes('m4a') ? 'm4a' :
                     mimeHint.includes('mpeg') ? 'mp3' : 'ogg';
         const audioPath = path.join(TMP_DIR, `audio_${Date.now()}.${ext}`);
-        const dl = await axios.get(fileLink.href, { responseType: 'arraybuffer', timeout: 60000 });
+        const dl = await axios.get(fileLink.href || fileLink, { responseType: 'arraybuffer', timeout: 60000 });
         fs.writeFileSync(audioPath, Buffer.from(dl.data));
 
         const userText = (await transcribeAudio(audioPath)).trim() || '(não consegui entender o áudio)';
@@ -360,8 +369,11 @@ async function handleAudioMessage(ctx: Context, fileId: string, mimeHint = 'audi
         await ctx.sendChatAction('typing');
         const replyText = await handleIntent(ctx, userText);
 
-        await status.update('🔊 Gerando resposta em áudio...');
-        const audioReplyPath = await synthesizeSpeech(replyText, 'pt-BR');
+        let audioReplyPath = '';
+        if (process.env.REPLICATE_API_TOKEN) {
+            await status.update('🔊 Gerando resposta em áudio...');
+            audioReplyPath = await synthesizeSpeech(replyText, 'pt-BR');
+        }
 
         await status.delete();
         await ctx.reply(`🎤 _"${userText}"_`, { parse_mode: 'Markdown' }).catch(() => {});

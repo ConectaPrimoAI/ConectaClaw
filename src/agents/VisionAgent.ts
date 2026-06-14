@@ -26,7 +26,7 @@ async function downloadTelegramImage(ctx: Context, fileId: string): Promise<stri
     const tg: any = (ctx as any).telegram;
     const fileLink = await tg.getFileLink(fileId);
     const dest = path.join(TMP_DIR, `img_${Date.now()}.jpg`);
-    const res = await axios.get(fileLink, { responseType: 'arraybuffer', timeout: 60000 });
+    const res = await axios.get(fileLink.href || fileLink, { responseType: 'arraybuffer', timeout: 60000 });
     fs.writeFileSync(dest, Buffer.from(res.data));
     return dest;
 }
@@ -78,29 +78,42 @@ export class VisionAgent implements Agent {
     category = 'media' as const;
 
     canHandle(ctx: AgentContext): boolean {
-        // VisionAgent é ativado quando há imagem anexada (extra flag setada pelo router)
         return ctx.extra?.hasImage === true;
     }
 
     async execute(ctx: AgentContext, tg: Context): Promise<AgentResult | string | null> {
-        // Implementação real está no conectaclaw-agent (porque precisa do file_id do Telegram)
-        return null;
+        try {
+            const photos = (tg.message as any)?.photo;
+            if (!photos || photos.length === 0) return '❌ Nenhuma imagem encontrada na mensagem.';
+
+            const photo = photos[photos.length - 1];
+            const imagePath = await downloadTelegramImage(tg, photo.file_id);
+            const pergunta = ctx.userMessage || 'Descreva esta imagem em detalhes, em português, identificando objetos, pessoas, texto visível e contexto.';
+
+            addLog(`👁️ Vision: analisando ${path.basename(imagePath)}`);
+            const result = await analyzeImage(imagePath, pergunta);
+
+            setTimeout(() => { try { fs.unlinkSync(imagePath); } catch {} }, 60_000);
+            return result;
+        } catch (e: any) {
+            addLog(`❌ VisionAgent: ${e.message}`);
+            return `❌ Erro ao processar imagem: ${e.message}`;
+        }
     }
 
-    /** Método estático para o router chamar quando há imagem */
     static async analyzeFromTelegram(ctx: Context, prompt?: string): Promise<string> {
         try {
-            // Pega o maior photo disponível
             const photos = (ctx.message as any)?.photo;
             if (!photos || photos.length === 0) return '❌ Nenhuma imagem encontrada na mensagem.';
 
-            const photo = photos[photos.length - 1]; // maior resolução
+            const photo = photos[photos.length - 1];
             const imagePath = await downloadTelegramImage(ctx, photo.file_id);
-
             const pergunta = prompt || 'Descreva esta imagem em detalhes, em português, identificando objetos, pessoas, texto visível e contexto.';
 
             addLog(`👁️ Vision: analisando ${path.basename(imagePath)}`);
-            return await analyzeImage(imagePath, pergunta);
+            const res = await analyzeImage(imagePath, pergunta);
+            setTimeout(() => { try { fs.unlinkSync(imagePath); } catch {} }, 60_000);
+            return res;
         } catch (e: any) {
             addLog(`❌ VisionAgent: ${e.message}`);
             return `❌ Erro ao processar imagem: ${e.message}`;
